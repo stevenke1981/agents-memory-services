@@ -221,6 +221,11 @@ impl ConsolidationEngine {
             // Note: Since this is decay parameter update only, we don't modify memory content.
         }
 
+        // Compact Tantivy index after decay updates
+        if let Err(e) = self.text_index.compact() {
+            tracing::warn!("Failed to compact text index: {e}");
+        }
+
         Ok(())
     }
 }
