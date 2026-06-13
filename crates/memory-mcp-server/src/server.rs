@@ -28,6 +28,8 @@ pub struct AddMemoryInput {
     pub scope: Option<String>,
     #[schemars(description = "Project path or ID (required when scope=Project)")]
     pub project_id: Option<String>,
+    #[schemars(description = "Agent instance ID (required when scope=Agent)")]
+    pub agent_id: Option<String>,
     #[schemars(description = "Session ID")]
     pub session_id: Option<String>,
     #[schemars(description = "Additional metadata key-value pairs")]
@@ -119,6 +121,27 @@ impl MemoryMcpServer {
             McpError::invalid_params(format!("Invalid scope: {}", scope_raw), None)
         })?;
 
+        // Validate scope requirements
+        match &scope {
+            MemoryScope::Project => {
+                if input.project_id.is_none() {
+                    return Err(McpError::invalid_params(
+                        "project_id is required when scope=Project",
+                        None,
+                    ));
+                }
+            }
+            MemoryScope::Agent => {
+                if input.agent_id.is_none() {
+                    return Err(McpError::invalid_params(
+                        "agent_id is required when scope=Agent",
+                        None,
+                    ));
+                }
+            }
+            _ => {}
+        }
+
         let session_id = input.session_id.unwrap_or_else(|| "default".to_string());
 
         let memories = self
@@ -127,6 +150,7 @@ impl MemoryMcpServer {
                 &input.content,
                 scope,
                 input.project_id,
+                input.agent_id,
                 session_id,
                 input.metadata,
             )

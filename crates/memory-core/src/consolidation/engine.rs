@@ -43,6 +43,7 @@ impl ConsolidationEngine {
         vector: Vec<f32>,
         scope: MemoryScope,
         project_id: Option<String>,
+        agent_id: Option<String>,
         session_id: String,
         metadata_custom: Option<serde_json::Value>,
     ) -> Result<Option<Memory>> {
@@ -121,7 +122,7 @@ impl ConsolidationEngine {
             category: ext.category.as_str().to_string(),
             scope: scope.as_str().to_string(),
             project_id: project_id.clone(),
-            agent_id: None,
+            agent_id: agent_id.clone(),
             source_session: session_id,
             created_at: now_ms,
             updated_at: now_ms,
@@ -134,18 +135,34 @@ impl ConsolidationEngine {
             metadata: metadata_str,
         };
 
-        // Add to stores
+        // Insert SQLite first
         self.sqlite.insert_memory(&memory).await?;
-        self.vector_store.add(next_vector_id, &vector)?;
-        self.text_index.add_document(
+
+        // Then add to vector store — on failure, rollback SQLite
+        if let Err(e) = self.vector_store.add(next_vector_id, &vector) {
+            let _ = self.sqlite.delete_memory(&memory.id).await;
+            return Err(e.into());
+        }
+
+        // Then add to text index — on failure, rollback vector + SQLite
+        if let Err(e) = self.text_index.add_document(
             &memory.id,
             &memory.content,
             &memory.category,
             &memory.entities,
-        )?;
+        ) {
+            let _ = self.vector_store.remove(next_vector_id);
+            let _ = self.sqlite.delete_memory(&memory.id).await;
+            return Err(e.into());
+        }
 
-        // Entity linking
-        link_entities(&self.sqlite, &memory.id, &ext.entities, now_ms).await?;
+        // Entity linking — on failure, rollback text index + vector + SQLite
+        if let Err(e) = link_entities(&self.sqlite, &memory.id, &ext.entities, now_ms).await {
+            let _ = self.text_index.delete_document(&memory.id);
+            let _ = self.vector_store.remove(next_vector_id);
+            let _ = self.sqlite.delete_memory(&memory.id).await;
+            return Err(e.into());
+        }
 
         Ok(Some(memory))
     }

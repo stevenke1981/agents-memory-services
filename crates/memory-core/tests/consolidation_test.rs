@@ -91,6 +91,7 @@ async fn failed_vector_insert_does_not_leave_a_sqlite_orphan() {
             vec![1.0, 0.0],
             MemoryScope::Global,
             None,
+            None,
             "test".to_string(),
             None,
         )

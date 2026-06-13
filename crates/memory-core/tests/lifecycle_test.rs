@@ -47,6 +47,7 @@ async fn test_full_memory_lifecycle() {
             conversation,
             MemoryScope::Global,
             None,
+            None,
             "test-session".to_string(),
             None,
         )
@@ -65,6 +66,7 @@ async fn test_full_memory_lifecycle() {
         .add_memory(
             conversation,
             MemoryScope::Global,
+            None,
             None,
             "test-session".to_string(),
             None,
@@ -110,6 +112,7 @@ async fn deduplicates_at_the_exact_similarity_threshold() {
             conversation,
             MemoryScope::Global,
             None,
+            None,
             "first".to_string(),
             None,
         )
@@ -119,6 +122,7 @@ async fn deduplicates_at_the_exact_similarity_threshold() {
         .add_memory(
             conversation,
             MemoryScope::Global,
+            None,
             None,
             "second".to_string(),
             None,
@@ -144,6 +148,7 @@ async fn keeps_identical_memories_isolated_between_projects() {
             conversation,
             MemoryScope::Project,
             Some("project-a".to_string()),
+            None,
             "session-a".to_string(),
             None,
         )
@@ -154,6 +159,7 @@ async fn keeps_identical_memories_isolated_between_projects() {
             conversation,
             MemoryScope::Project,
             Some("project-b".to_string()),
+            None,
             "session-b".to_string(),
             None,
         )
@@ -176,6 +182,7 @@ async fn delete_cleans_vector_and_entity_indexes() {
         .add_memory(
             "User: I prefer using tokio::spawn for background tasks in Rust.",
             MemoryScope::Global,
+            None,
             None,
             "delete-test".to_string(),
             None,

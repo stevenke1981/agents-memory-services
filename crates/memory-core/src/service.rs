@@ -1,6 +1,6 @@
 use crate::config::MemoryConfig;
 use crate::consolidation::ConsolidationEngine;
-use crate::error::Result;
+use crate::error::{MemoryError, Result};
 use crate::extraction::{ExtractionConfig, ExtractionEngine, LlmClient};
 use crate::models::{HybridWeights, Memory, MemoryScope, SearchQuery, SearchResult};
 use crate::retrieval::RetrievalEngine;
@@ -89,37 +89,63 @@ impl MemoryService {
         })
     }
 
-    /// Add memory from conversation content
+    /// Add memory from conversation content.
+    ///
+    /// Extraction errors are gracefully degraded: if the LLM extraction or embedding
+    /// fails, a warning is logged and the call returns an empty result instead of
+    /// propagating the error. This ensures the session is not interrupted by transient
+    /// API failures or malformed extraction responses.
     pub async fn add_memory(
         &self,
         content: &str,
         scope: MemoryScope,
         project_id: Option<String>,
+        agent_id: Option<String>,
         session_id: String,
         metadata: Option<serde_json::Value>,
     ) -> Result<Vec<Memory>> {
-        // 1. Extract memory chunks from content
-        let extracted_chunks = self.extraction.extract(content).await?;
+        // 1. Extract memory chunks from content (gracefully degraded)
+        let extracted_chunks = match self.extraction.extract(content).await {
+            Ok(chunks) => chunks,
+            Err(e @ MemoryError::ExtractionFailed(_))
+            | Err(e @ MemoryError::ExtractionParseFailed(_))
+            | Err(e @ MemoryError::HttpClient(_)) => {
+                tracing::warn!("Memory extraction degraded (will not block session): {e}");
+                return Ok(Vec::new());
+            }
+            Err(e) => return Err(e),
+        };
 
         let mut added = Vec::new();
         for chunk in extracted_chunks {
-            // 2. Embed content
-            let vector = self.extraction.embed(&chunk.content).await?;
+            // 2. Embed content (skip on failure)
+            let vector = match self.extraction.embed(&chunk.content).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("Memory embedding degraded (skipping chunk): {e}");
+                    continue;
+                }
+            };
 
             // 3. Consolidate and insert
-            if let Some(mem) = self
+            match self
                 .consolidation
                 .consolidate_single(
                     chunk,
                     vector,
                     scope.clone(),
                     project_id.clone(),
+                    agent_id.clone(),
                     session_id.clone(),
                     metadata.clone(),
                 )
-                .await?
+                .await
             {
-                added.push(mem);
+                Ok(Some(mem)) => added.push(mem),
+                Ok(None) => {} // deduplicated
+                Err(e) => {
+                    tracing::warn!("Memory consolidation degraded (skipping chunk): {e}");
+                }
             }
         }
 

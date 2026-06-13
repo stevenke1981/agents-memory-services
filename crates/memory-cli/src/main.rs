@@ -92,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
                     &content,
                     memory_scope,
                     project_id,
+                    None,
                     "cli-session".to_string(),
                     None,
                 )
