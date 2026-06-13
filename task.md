@@ -1,0 +1,31 @@
+# Task Todo List (task.md)
+
+- `[x]` Setup workspace structure and basic configurations
+  - `[x]` Initialize workspace root `Cargo.toml`
+  - `[x]` Create directory structure for crates (`memory-core`, `memory-mcp-server`, `memory-cli`), `plugin`, and `tests`
+- `[x]` Implement `memory-core` library Crate
+  - `[x]` Define Models (`Memory`, `MemoryCategory`, `MemoryScope`, `SearchQuery`, `SearchResult`)
+  - `[x]` Set up SQLite migrations (WAL mode, schemas, indices, configs)
+  - `[x]` Implement SQLite database store module (`SqliteStore`)
+  - `[x]` Implement HNSW vector store module (`VectorStore` using pure Rust flat-scan fallback)
+  - `[x]` Implement full-text search index module (`TextIndex` using `tantivy`)
+  - `[x]` Implement OpenAI-compatible HTTP `LlmClient` (Embeddings & Completions)
+  - `[x]` Implement LLM Extraction Engine (`ExtractionEngine` with single-pass prompt)
+  - `[x]` Implement ADD-only Consolidation Engine (Similarity checking, entity logic, Ebbinghaus decay)
+  - `[x]` Implement Hybrid Retrieval Engine (Semantic + BM25 + Recency score fusion and filters)
+  - `[x]` Implement high-level orchestrator `MemoryService`
+- `[x]` Implement `memory-mcp-server` Binary Crate
+  - `[x]` Implement MCP Stdio transport using custom JSON-RPC stdio loop
+  - `[x]` Define and implement all 6 MCP Tools (`add_memory`, `search_memories`, `get_memories`, etc.)
+- `[x]` Implement `memory-cli` Debug Binary Crate
+  - `[x]` Implement subcommands: `add`, `search`, `list`, `stats`, `consolidate`
+- `[x]` Implement TypeScript Shim Plugin
+  - `[x]` Set up plugin workspace (`package.json`, `tsconfig.json`)
+  - `[x]` Implement lifecycle hooks: `onChatStart`, `onMessageComplete`, `onSessionEnd`
+- `[x]` Implement OpenCode Skill
+  - `[x]` Add `skills/memory-extraction.md`
+- `[x]` Testing & Verification
+  - `[x]` Add unit tests / E2E test verifying storage, retrieval, and consolidation
+  - `[x]` Add lifecycle E2E integration test with mock LLM client
+  - `[x]` Run cargo clippy / check verification
+  - `[x]` Verify production build compiles and works under release mode

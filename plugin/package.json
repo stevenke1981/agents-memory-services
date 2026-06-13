@@ -1,0 +1,13 @@
+{
+  "name": "opencode-memory",
+  "version": "1.0.0",
+  "description": "TypeScript shim for the OpenCode Agent Long-Term Memory System",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

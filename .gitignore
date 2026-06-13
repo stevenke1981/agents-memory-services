@@ -1,0 +1,22 @@
+# Rust build artifacts
+target/
+
+# Node/TypeScript build artifacts
+node_modules/
+plugin/dist/
+
+# SQLite & local database directories
+.opencode/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+vectors.usearch
+vectors.bin
+tantivy/
+
+# OS/IDE metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
