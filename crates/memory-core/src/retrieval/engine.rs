@@ -1,14 +1,14 @@
 use crate::error::Result;
 use crate::extraction::LlmClient;
 use crate::models::{HybridWeights, Memory, SearchQuery, SearchResult};
-use crate::retrieval::hybrid::normalize_bm25;
-use crate::storage::{SqliteStore, TextIndex, VectorStore};
+use crate::retrieval::{bm25::Bm25Retriever, semantic::SemanticRetriever};
+use crate::storage::SqliteStore;
 use std::sync::Arc;
 
 pub struct RetrievalEngine {
+    semantic: SemanticRetriever,
+    bm25: Bm25Retriever,
     sqlite: Arc<SqliteStore>,
-    vector_store: Arc<VectorStore>,
-    text_index: Arc<TextIndex>,
     llm_client: Arc<LlmClient>,
     embedding_model: String,
     default_weights: HybridWeights,
@@ -18,17 +18,17 @@ pub struct RetrievalEngine {
 impl RetrievalEngine {
     pub fn new(
         sqlite: Arc<SqliteStore>,
-        vector_store: Arc<VectorStore>,
-        text_index: Arc<TextIndex>,
+        vector_store: Arc<crate::storage::VectorStore>,
+        text_index: Arc<crate::storage::TextIndex>,
         llm_client: Arc<LlmClient>,
         embedding_model: &str,
         default_weights: HybridWeights,
         decay_mu: f64,
     ) -> Self {
         Self {
+            semantic: SemanticRetriever::new(vector_store),
+            bm25: Bm25Retriever::new(text_index),
             sqlite,
-            vector_store,
-            text_index,
             llm_client,
             embedding_model: embedding_model.to_string(),
             default_weights,
@@ -50,9 +50,8 @@ impl RetrievalEngine {
             .embed(&query.query, &self.embedding_model)
             .await?;
 
-        let sem_results = self.vector_store.search(&query_vec, fetch_k)?;
-        let bm25_results_raw = self.text_index.search(&query.query, fetch_k)?;
-        let bm25_results = normalize_bm25(&bm25_results_raw);
+        let sem_results = self.semantic.search(&query_vec, fetch_k)?;
+        let bm25_results = self.bm25.search_normalized(&query.query, fetch_k)?;
 
         // 2. Fetch all candidates from SQLite
         let mut candidate_ids = std::collections::HashSet::new();
