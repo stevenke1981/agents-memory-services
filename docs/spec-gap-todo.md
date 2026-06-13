@@ -21,25 +21,21 @@ Legend:
 
 ## P0 Todo
 
-- [ ] Commit and push the OpenCode installer path fix.
-  - Spec/user reality: actual OpenCode config is `~/.config/opencode/opencode.jsonc`, not legacy `.claude/.opencode/`.
-  - Current evidence: `crates/memory-mcp-server/src/main.rs` is modified but uncommitted; `opencode_config_path()` now points to `.config/opencode/opencode.jsonc`.
-  - Suggested files: `crates/memory-mcp-server/src/main.rs`, `README.md`, `opencode-memory-system.md`.
+- [x] Commit and push the OpenCode installer path fix.
+  - Commit `b9b50e8` — installer now targets `%USERPROFILE%\.config\opencode\opencode.jsonc` with JSONC comment support.
+  - Files: `crates/memory-mcp-server/src/main.rs`, `docs/spec-gap-todo.md`.
 
-- [ ] Enforce required scope parameters and support `Agent` scope properly.
-  - Spec evidence: `project_id` is required when `scope=Project`; schema includes `Global`, `Project`, `Session`, and `Agent`.
-  - Current evidence: `AddMemoryInput` has no `agent_id`, and `ConsolidationEngine` writes `agent_id: None`.
-  - Suggested files: `crates/memory-mcp-server/src/server.rs`, `crates/memory-core/src/service.rs`, `crates/memory-core/src/consolidation/engine.rs`, `crates/memory-core/src/models/memory.rs`.
+- [x] Enforce required scope parameters and support `Agent` scope properly.
+  - Commit `ee93cc8` — `agent_id` added to `AddMemoryInput`, `MemoryService::add_memory()`, and `ConsolidationEngine::consolidate_single()`. Scope validation rejects missing `project_id` for Project scope and missing `agent_id` for Agent scope.
+  - Files: `crates/memory-mcp-server/src/server.rs`, `crates/memory-core/src/service.rs`, `crates/memory-core/src/consolidation/engine.rs`, `crates/memory-cli/src/main.rs`.
 
-- [ ] Add rollback or transaction-style cleanup for partial insert failures.
-  - Spec evidence: SQLite, USearch, Tantivy, and entity links must remain consistent after insertion/deletion.
-  - Current evidence: insertion writes SQLite first, then vector, then Tantivy, then entities; a later index failure can leave a stale SQLite row.
-  - Suggested files: `crates/memory-core/src/consolidation/engine.rs`, `crates/memory-core/src/storage/sqlite.rs`, `crates/memory-core/tests/lifecycle_test.rs`.
+- [x] Add rollback or transaction-style cleanup for partial insert failures.
+  - Commit `ee93cc8` — each index step (vector → text → entity) rolls back the previous steps on failure. Tests confirm no SQLite orphans remain.
+  - Files: `crates/memory-core/src/consolidation/engine.rs`.
 
-- [ ] Define and test extraction graceful degradation.
-  - Spec evidence: extraction timeout/parse errors must not interrupt the session.
-  - Current evidence: `MemoryService::add_memory()` propagates extraction and embedding errors; the plugin catches errors, but direct MCP calls still fail hard.
-  - Suggested files: `crates/memory-core/src/service.rs`, `crates/memory-core/src/extraction/engine.rs`, `crates/memory-mcp-server/src/server.rs`, `plugin/src/index.ts`.
+- [x] Define and test extraction graceful degradation.
+  - Commit `ee93cc8` — extraction/HTTP errors are caught with `tracing::warn!`, return empty `Vec` instead of propagating. Embedding failures skip the chunk. Consolidation errors also degraded.
+  - Files: `crates/memory-core/src/service.rs`.
 
 ## P1 Todo
 
