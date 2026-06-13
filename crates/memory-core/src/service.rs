@@ -174,6 +174,11 @@ impl MemoryService {
             .await
     }
 
+    /// Expose the consolidation engine for background scheduling
+    pub fn consolidation_engine(&self) -> Arc<ConsolidationEngine> {
+        self.consolidation.clone()
+    }
+
     /// Get stats
     pub async fn get_stats(&self) -> Result<serde_json::Value> {
         let mut stats = self.sqlite.get_stats().await?;

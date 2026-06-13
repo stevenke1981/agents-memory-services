@@ -50,6 +50,16 @@ async fn main() -> anyhow::Result<()> {
     let service = Arc::new(MemoryService::new(config).await?);
     tracing::info!("Memory service initialized");
 
+    // Spawn background decay scheduler (runs every 24 hours)
+    let scheduler = memory_core::consolidation::DecayScheduler::new(
+        service.consolidation_engine(),
+        std::time::Duration::from_secs(24 * 60 * 60),
+    );
+    tokio::spawn(async move {
+        scheduler.run().await;
+    });
+    tracing::info!("Decay scheduler spawned (24h interval)");
+
     // Launch custom MCP server on stdio using rmcp
     let server = server::MemoryMcpServer::new(service);
     server.serve_stdio().await?;
