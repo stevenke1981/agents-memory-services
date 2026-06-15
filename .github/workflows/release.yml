@@ -6,10 +6,10 @@
 #   - Manual workflow_dispatch (choose a semver like 0.1.0)
 #
 # What it does:
-#   1. cargo build --release (MSVC toolchain, x86_64-pc-windows-msvc)
-#   2. Package binaries + skills into a ZIP archive
-#   3. Compute SHA256 checksum
-#   4. Create a GitHub Release with the archive and checksum attached
+#   1. cargo build --release for Windows, Linux, and macOS (x86_64 + aarch64)
+#   2. Package binaries + skills into platform archives (zip / tar.gz)
+#   3. Compute SHA256 checksum for each archive
+#   4. Create a GitHub Release with all archives and checksums attached
 # =============================================================================
 
 name: Release
@@ -42,6 +42,27 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive_ext: zip
+            binary_ext: .exe
+
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_ext: tar.gz
+            binary_ext: ""
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive_ext: tar.gz
+            binary_ext: ""
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive_ext: tar.gz
+            binary_ext: ""
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive_ext: tar.gz
+            binary_ext: ""
 
     steps:
       - name: Checkout repository
@@ -59,7 +80,6 @@ jobs:
 
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }}
-        shell: bash
 
       - name: Prepare packaging directory
         run: |
@@ -70,8 +90,12 @@ jobs:
 
       - name: Copy binaries
         run: |
-          cp "target/${{ matrix.target }}/release/${{ env.BINARY_SERVER }}.exe" "${{ env.PKG_DIR }}/${{ env.BINARY_SERVER }}.exe"
-          cp "target/${{ matrix.target }}/release/${{ env.BINARY_CLI }}.exe" "${{ env.PKG_DIR }}/${{ env.BINARY_CLI }}.exe"
+          cp "target/${{ matrix.target }}/release/${{ env.BINARY_SERVER }}${{ matrix.binary_ext }}" \
+             "${{ env.PKG_DIR }}/${{ env.BINARY_SERVER }}${{ matrix.binary_ext }}"
+          cp "target/${{ matrix.target }}/release/${{ env.BINARY_CLI }}${{ matrix.binary_ext }}" \
+             "${{ env.PKG_DIR }}/${{ env.BINARY_CLI }}${{ matrix.binary_ext }}"
+          chmod +x "${{ env.PKG_DIR }}/${{ env.BINARY_SERVER }}${{ matrix.binary_ext }}" 2>/dev/null || true
+          chmod +x "${{ env.PKG_DIR }}/${{ env.BINARY_CLI }}${{ matrix.binary_ext }}" 2>/dev/null || true
         shell: bash
 
       - name: Copy skill files
@@ -93,58 +117,95 @@ jobs:
           echo "tag=v$RAW_VERSION" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - name: Create archive
+      - name: Create archive (Windows zip)
+        if: matrix.archive_ext == 'zip'
         run: |
-          $rawVersion = "${{ steps.version.outputs.raw }}"
           $tagVersion = "${{ steps.version.outputs.tag }}"
           $archiveName = "${{ env.ARCHIVE_NAME }}-${tagVersion}-${{ matrix.target }}.${{ matrix.archive_ext }}"
           Compress-Archive -Path "target/packaging/${{ env.ARCHIVE_NAME }}/*" -DestinationPath $archiveName -Force
           echo "ARCHIVE=$archiveName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "ARCHIVE_PATH=$archiveName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "ARCHIVE_PATH=$(Resolve-Path $archiveName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         shell: pwsh
+
+      - name: Create archive (Linux / macOS tar.gz)
+        if: matrix.archive_ext == 'tar.gz'
+        run: |
+          tagVersion="${{ steps.version.outputs.tag }}"
+          archiveName="${{ env.ARCHIVE_NAME }}-${tagVersion}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          tar -czf "${archiveName}" -C "target/packaging" "${{ env.ARCHIVE_NAME }}"
+          echo "ARCHIVE=${archiveName}" >> "$GITHUB_ENV"
+          echo "ARCHIVE_PATH=${archiveName}" >> "$GITHUB_ENV"
+        shell: bash
 
       - name: Compute SHA256 checksum
         id: checksum
         run: |
-          if command -v sha256sum &>/dev/null; then
-            sha256sum "${{ env.ARCHIVE_PATH }}" > "${{ env.ARCHIVE_PATH }}.sha256"
-            HASH=$(cut -d' ' -f1 "${{ env.ARCHIVE_PATH }}.sha256")
-          else
-            HASH=$(certutil -hashfile "${{ env.ARCHIVE_PATH }}" SHA256 | \
-              awk 'NR==2{print tolower($1)}')
-            echo "$HASH  ${{ env.ARCHIVE_PATH }}" > "${{ env.ARCHIVE_PATH }}.sha256"
-          fi
+          sha256sum "${{ env.ARCHIVE_PATH }}" > "${{ env.ARCHIVE_PATH }}.sha256"
+          HASH=$(cut -d' ' -f1 "${{ env.ARCHIVE_PATH }}.sha256")
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
         shell: bash
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARCHIVE_NAME }}-${{ steps.version.outputs.tag }}-${{ matrix.target }}
+          name: release-assets-${{ matrix.target }}
           path: |
             ${{ env.ARCHIVE_PATH }}
             ${{ env.ARCHIVE_PATH }}.sha256
 
-      - name: Create Release
-        id: create_release
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          merge-multiple: true
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
+      - name: List release assets
+        run: ls -la
+
+      - name: Generate release body
+        id: body
+        run: |
+          BODY="# memlong ${{ steps.version.outputs.tag }}"$'\n\n'
+          BODY+="## Downloads"$'\n\n'
+          BODY+="| Platform | File | SHA256 |"$'\n'
+          BODY+="|----------|------|--------|"$'\n'
+          for f in *.sha256; do
+            base="${f%.sha256}"
+            hash=$(cut -d' ' -f1 "$f")
+            BODY+="| \`${base##opencode-memory-}\` | \`${base}\` | \`${hash}\` |"$'\n'
+          done
+          {
+            echo 'body<<EOF'
+            echo "${BODY}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Release ${{ steps.version.outputs.tag }}
-          body: |
-            ## memlong ${{ steps.version.outputs.tag }}
-
-            ### What's Changed
-
-            See commit history for details.
-
-            ### Downloads
-
-            | File | SHA256 |
-            |------|--------|
-            | `${{ env.ARCHIVE_PATH }}` | `${{ steps.checksum.outputs.hash }}` |
+          body: ${{ steps.body.outputs.body }}
           draft: false
           prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
           files: |
-            ${{ env.ARCHIVE_PATH }}
-            ${{ env.ARCHIVE_PATH }}.sha256
+            opencode-memory-*

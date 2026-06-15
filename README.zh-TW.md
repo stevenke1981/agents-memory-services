@@ -57,15 +57,15 @@ memory-core
 
 ### 系統需求
 
-- Windows 10 或 11
-- Rust stable 版本（含 MSVC 工具鏈）
-- Visual Studio Build Tools（需包含「使用 C++ 的桌面開發」工作負載）
+- **Windows:** Windows 10 或 11，Rust stable（含 MSVC 工具鏈），Visual Studio Build Tools
+- **Linux:** glibc 2.31+，Rust stable（僅原始碼編譯時需要）
+- **macOS:** macOS 12+，Rust stable（僅原始碼編譯時需要）
 - Node.js 18+（僅在編譯或測試 OpenCode 外掛時需要）
 - OpenAI 相容的聊天補全（chat completions）與嵌入式（embeddings）端點
 
 ### 從原始碼編譯
 
-```powershell
+```bash
 git clone https://github.com/stevenke1981/memlong.git
 cd memlong
 cargo build --release
@@ -73,9 +73,10 @@ cargo build --release
 
 編譯完成後，MCP 伺服器位於：
 
-```text
-target\release\memory-mcp-server.exe
-```
+| 平台 | 路徑 |
+|------|------|
+| Windows | `target\release\memory-mcp-server.exe` |
+| Linux / macOS | `target/release/memory-mcp-server` |
 
 ### 在 Windows 上安裝
 
@@ -91,18 +92,56 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -FromSource
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version v0.1.0
 ```
 
-安裝程式會將執行檔放置於 `%USERPROFILE%\.config\opencode-memory\bin`，並自動執行 `install` 指令來設定支援的 MCP 用戶端。完成後請重新啟動您的 MCP 用戶端。
+### 在 Linux 上安裝
+
+從原始碼建置並安裝：
+
+```bash
+./install.sh --from-source
+```
+
+安裝已發行的版本：
+
+```bash
+./install.sh --version v0.1.0
+```
+
+### 在 macOS 上安裝
+
+從原始碼建置並安裝：
+
+```bash
+./install.sh --from-source
+```
+
+安裝已發行的版本：
+
+```bash
+./install.sh --version v0.1.0
+```
+
+安裝程式會將執行檔放置於 `~/.config/opencode-memory/bin`（Linux/macOS）或 `%USERPROFILE%\.config\opencode-memory\bin`（Windows），並自動執行 `install` 指令來設定支援的 MCP 用戶端。完成後請重新啟動您的 MCP 用戶端。
 
 ### 設定模型
 
 啟動 MCP 伺服器前，請先設定 OpenAI 相容的端點：
 
+**Windows (PowerShell):**
 ```powershell
 $env:LLM_API_BASE = "http://localhost:8080/v1"
 $env:LLM_API_KEY = "local"
 $env:EXTRACTION_MODEL = "your-chat-model"
 $env:EMBEDDING_MODEL = "your-embedding-model"
 $env:EMBEDDING_DIM = "1536"
+```
+
+**Linux / macOS (bash):**
+```bash
+export LLM_API_BASE="http://localhost:8080/v1"
+export LLM_API_KEY="local"
+export EXTRACTION_MODEL="your-chat-model"
+export EMBEDDING_MODEL="your-embedding-model"
+export EMBEDDING_DIM="1536"
 ```
 
 重要選用設定：
@@ -124,13 +163,18 @@ $env:EMBEDDING_DIM = "1536"
 
 ### 健康檢查
 
-```powershell
+```bash
+# Windows (PowerShell)
 .\target\release\memory-mcp-server.exe health
+
+# Linux / macOS
+./target/release/memory-mcp-server health
 ```
 
 ### 偵錯 CLI
 
-```powershell
+```bash
+# Windows (PowerShell) 或 Linux/macOS
 cargo run -p memory-cli -- add --content "使用者偏好使用 Rust 開發核心服務"
 cargo run -p memory-cli -- search --query "偏好的實作語言"
 cargo run -p memory-cli -- list
@@ -142,7 +186,7 @@ cargo run -p memory-cli -- consolidate
 
 此外掛為輕量的生命週期適配層，記憶行為仍由 Rust 核心負責。
 
-```powershell
+```bash
 cd plugin
 npm ci
 npm run build
@@ -205,7 +249,7 @@ npm run build
 
 ### 必要驗證指令
 
-```powershell
+```bash
 cargo fmt --all -- --check
 cargo test --workspace          # 15+ 項測試，包含 MCP 協定煙霧測試
 cargo bench -p memory-core      # Criterion 基準測試（add_memory、search_memories）
@@ -222,10 +266,16 @@ npm test
 
 ## 打包
 
-建立 Windows 發行版壓縮檔與 SHA256 校驗檔：
+建立發行版壓縮檔與 SHA256 校驗檔：
 
+**Windows：**
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0
+```
+
+**Linux：**
+```bash
+./scripts/package-release.sh --version 0.1.0
 ```
 
 產出物位於 `target/` 目錄下。

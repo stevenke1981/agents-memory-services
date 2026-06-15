@@ -51,15 +51,15 @@ Default project-local data is stored under `.opencode/`:
 
 ### Requirements
 
-- Windows 10 or 11
-- Rust stable with the MSVC toolchain
-- Visual Studio Build Tools with Desktop development with C++
+- **Windows:** Windows 10 or 11, Rust stable with MSVC toolchain, Visual Studio Build Tools
+- **Linux:** glibc 2.31+, Rust stable (only for source builds)
+- **macOS:** macOS 12+, Rust stable (only for source builds)
 - Node.js 18+ only when building or testing the OpenCode plugin
 - An OpenAI-compatible chat completions and embeddings endpoint
 
 ### Build From Source
 
-```powershell
+```bash
 git clone https://github.com/stevenke1981/memlong.git
 cd memlong
 cargo build --release
@@ -67,9 +67,10 @@ cargo build --release
 
 The MCP server is created at:
 
-```text
-target\release\memory-mcp-server.exe
-```
+| Platform | Path |
+|----------|------|
+| Windows  | `target\release\memory-mcp-server.exe` |
+| Linux / macOS | `target/release/memory-mcp-server` |
 
 ### Install On Windows
 
@@ -85,18 +86,56 @@ Install a published release when available:
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version v0.1.0
 ```
 
-The installer places the executable under `%USERPROFILE%\.config\opencode-memory\bin` and invokes its `install` command to configure supported MCP clients. Restart the client after installation.
+### Install On Linux
+
+Build and install from the checkout:
+
+```bash
+./install.sh --from-source
+```
+
+Install a published release when available:
+
+```bash
+./install.sh --version v0.1.0
+```
+
+### Install On macOS
+
+Build and install from the checkout:
+
+```bash
+./install.sh --from-source
+```
+
+Install a published release when available:
+
+```bash
+./install.sh --version v0.1.0
+```
+
+The installer places the executable under `~/.config/opencode-memory/bin` (Linux/macOS) or `%USERPROFILE%\.config\opencode-memory\bin` (Windows) and invokes its `install` command to configure supported MCP clients. Restart the client after installation.
 
 ### Configure The Models
 
 Set an OpenAI-compatible endpoint before starting the MCP server:
 
+**Windows (PowerShell):**
 ```powershell
 $env:LLM_API_BASE = "http://localhost:8080/v1"
 $env:LLM_API_KEY = "local"
 $env:EXTRACTION_MODEL = "your-chat-model"
 $env:EMBEDDING_MODEL = "your-embedding-model"
 $env:EMBEDDING_DIM = "1536"
+```
+
+**Linux / macOS (bash):**
+```bash
+export LLM_API_BASE="http://localhost:8080/v1"
+export LLM_API_KEY="local"
+export EXTRACTION_MODEL="your-chat-model"
+export EMBEDDING_MODEL="your-embedding-model"
+export EMBEDDING_DIM="1536"
 ```
 
 Important optional settings:
@@ -118,13 +157,18 @@ Important optional settings:
 
 ### Health Check
 
-```powershell
+```bash
+# Windows (PowerShell)
 .\target\release\memory-mcp-server.exe health
+
+# Linux / macOS
+./target/release/memory-mcp-server health
 ```
 
 ### Debug CLI
 
-```powershell
+```bash
+# Windows (PowerShell) or Linux/macOS
 cargo run -p memory-cli -- add --content "User prefers Rust for core services"
 cargo run -p memory-cli -- search --query "preferred implementation language"
 cargo run -p memory-cli -- list
@@ -136,7 +180,7 @@ cargo run -p memory-cli -- consolidate
 
 The plugin is a thin lifecycle adapter; memory behavior remains in Rust.
 
-```powershell
+```bash
 cd plugin
 npm ci
 npm run build
@@ -195,7 +239,7 @@ Use grep or file search for configuration, documentation, literal error messages
 
 ### Required Verification
 
-```powershell
+```bash
 cargo fmt --all -- --check
 cargo test --workspace          # 15+ tests including MCP protocol smoke test
 cargo bench -p memory-core      # Criterion benchmarks (add_memory, search_memories)
@@ -210,10 +254,16 @@ The release server should remain below the 20 MB target documented in the specif
 
 ## Packaging
 
-Create the Windows release archive and SHA256 file:
+Create the release archive and SHA256 file:
 
+**Windows:**
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0
+```
+
+**Linux:**
+```bash
+./scripts/package-release.sh --version 0.1.0
 ```
 
 Artifacts are written under `target/`.
