@@ -6,169 +6,35 @@
 
 </div>
 
-Memlong is a local-first long-term memory system for coding agents. It stores durable facts, preferences, decisions, code patterns, and project knowledge across sessions, then retrieves relevant memories through hybrid semantic, keyword, and temporal ranking.
+A local-first long-term memory system for coding agents. Durable facts, preferences, decisions, code patterns, and project knowledge across sessions. Hybrid semantic + BM25 + temporal retrieval.
 
-The core is implemented in Rust and exposed as an MCP server. A small TypeScript shim provides optional OpenCode lifecycle hooks for automatic retrieval and capture.
+Core in Rust, exposed as an MCP server. Optional TypeScript shim for OpenCode lifecycle hooks.
 
-## What It Provides
-
-- Single-pass LLM memory extraction with confidence and importance filtering
-- ADD-only consolidation with exact and near-duplicate detection
-- Project, global, session, and agent memory scopes
-- USearch HNSW vector search with persistent local indexes
-- Tantivy BM25 full-text search
-- Ebbinghaus-inspired retention decay and access reinforcement
-- MCP tools for adding, searching, listing, deleting, consolidating, and inspecting memories
-- A thin OpenCode plugin for automatic session injection and capture
-
-## Architecture
-
-```text
-OpenCode / Codex / MCP Client
-          |
-          | JSON-RPC over stdio
-          v
-memory-mcp-server
-          |
-          v
-memory-core
-  |-- SQLite metadata and entities
-  |-- USearch HNSW vectors
-  |-- Tantivy BM25 index
-  `-- extraction, consolidation, retrieval, decay
-```
-
-Default project-local data is stored under `.opencode/`:
-
-```text
-.opencode/
-|-- memory.db
-|-- vectors.usearch
-`-- tantivy/
-```
-
-## Human Quick Start
-
-### Requirements
-
-- **Windows:** Windows 10 or 11, Rust stable with MSVC toolchain, Visual Studio Build Tools
-- **Linux:** glibc 2.31+, Rust stable (only for source builds)
-- **macOS:** macOS 12+, Rust stable (only for source builds)
-- Node.js 18+ only when building or testing the OpenCode plugin
-- An OpenAI-compatible chat completions and embeddings endpoint
-
-### Build From Source
+## Quick Start
 
 ```bash
+# Build
 git clone https://github.com/stevenke1981/memlong.git
 cd memlong
 cargo build --release
-```
 
-The MCP server is created at:
-
-| Platform | Path |
-|----------|------|
-| Windows  | `target\release\memory-mcp-server.exe` |
-| Linux / macOS | `target/release/memory-mcp-server` |
-
-### Install On Windows
-
-Build and install from the checkout:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -FromSource
-```
-
-Install a published release when available:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version v0.1.0
-```
-
-### Install On Linux
-
-Build and install from the checkout:
-
-```bash
+# Install
 ./install.sh --from-source
-```
 
-Install a published release when available:
-
-```bash
-./install.sh --version v0.1.0
-```
-
-### Install On macOS
-
-Build and install from the checkout:
-
-```bash
-./install.sh --from-source
-```
-
-Install a published release when available:
-
-```bash
-./install.sh --version v0.1.0
-```
-
-The installer places the executable under `~/.config/opencode-memory/bin` (Linux/macOS) or `%USERPROFILE%\.config\opencode-memory\bin` (Windows) and invokes its `install` command to configure supported MCP clients. Restart the client after installation.
-
-### Configure The Models
-
-Set an OpenAI-compatible endpoint before starting the MCP server:
-
-**Windows (PowerShell):**
-```powershell
-$env:LLM_API_BASE = "http://localhost:8080/v1"
-$env:LLM_API_KEY = "local"
-$env:EXTRACTION_MODEL = "your-chat-model"
-$env:EMBEDDING_MODEL = "your-embedding-model"
-$env:EMBEDDING_DIM = "1536"
-```
-
-**Linux / macOS (bash):**
-```bash
+# Configure (set before starting)
 export LLM_API_BASE="http://localhost:8080/v1"
 export LLM_API_KEY="local"
 export EXTRACTION_MODEL="your-chat-model"
 export EMBEDDING_MODEL="your-embedding-model"
 export EMBEDDING_DIM="1536"
-```
 
-Important optional settings:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PROJECT_ROOT` | current directory | Root used for the `.opencode` data directory |
-| `MEMORY_DB_PATH` | `.opencode/memory.db` | SQLite database path |
-| `MEMORY_VECTOR_PATH` | `.opencode/vectors.usearch` | USearch index path |
-| `MEMORY_TANTIVY_PATH` | `.opencode/tantivy` | Tantivy index directory |
-| `MEMORY_DEDUP_THRESHOLD` | `0.92` | Exact duplicate cosine threshold |
-| `MEMORY_NEAR_DEDUP_THRESHOLD` | `0.75` | Near-duplicate cosine threshold |
-| `MEMORY_MIN_CONFIDENCE` | `0.60` | Minimum extraction confidence |
-| `MEMORY_MIN_IMPORTANCE` | `2` | Minimum LLM importance from 1 to 5 |
-| `MEMORY_DECAY_LAMBDA` | `0.001` | Importance recency decay rate |
-| `MEMORY_DECAY_MU` | `0.05` | Retrieval temporal decay rate |
-
-`EMBEDDING_DIM` must match the embedding model. Existing vector indexes are dimension-specific.
-
-### Health Check
-
-```bash
-# Windows (PowerShell)
-.\target\release\memory-mcp-server.exe health
-
-# Linux / macOS
+# Verify
 ./target/release/memory-mcp-server health
 ```
 
-### Debug CLI
+### CLI Debug
 
 ```bash
-# Windows (PowerShell) or Linux/macOS
 cargo run -p memory-cli -- add --content "User prefers Rust for core services"
 cargo run -p memory-cli -- search --query "preferred implementation language"
 cargo run -p memory-cli -- list
@@ -176,104 +42,136 @@ cargo run -p memory-cli -- stats
 cargo run -p memory-cli -- consolidate
 ```
 
-### OpenCode Plugin
+## Configuration
 
-The plugin is a thin lifecycle adapter; memory behavior remains in Rust.
-
-```bash
-cd plugin
-npm ci
-npm run build
-```
-
-The built entry point is `plugin/dist/index.js`. It supports direct arrays, `{ results: [...] }`, and MCP text-content responses.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_API_BASE` | `http://localhost:8080/v1` | OpenAI-compatible endpoint |
+| `LLM_API_KEY` | `local` | API key |
+| `EXTRACTION_MODEL` | `llama-3-8b` | Chat model for extraction |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
+| `EMBEDDING_DIM` | `1536` | Embedding dimensions (must match model) |
+| `PROJECT_ROOT` | current dir | Root for `.opencode/` data directory |
+| `MEMORY_DB_PATH` | `.opencode/memory.db` | SQLite path |
+| `MEMORY_VECTOR_PATH` | `.opencode/vectors.usearch` | USearch index path |
+| `MEMORY_TANTIVY_PATH` | `.opencode/tantivy` | Tantivy index directory |
+| `MEMORY_DEDUP_THRESHOLD` | `0.92` | Exact duplicate cosine threshold |
+| `MEMORY_NEAR_DEDUP_THRESHOLD` | `0.75` | Near-duplicate cosine threshold |
+| `MEMORY_MAX_RECORDS` | `50000` | Maximum memory capacity |
+| `MEMORY_DECAY_LAMBDA` | `0.001` | Importance recency decay rate |
+| `MEMORY_TEMPORAL_MU` | `0.05` | Retrieval temporal decay rate |
 
 ## MCP Tools
 
 | Tool | Purpose |
-| --- | --- |
+|------|---------|
 | `add_memory` | Extract and store memories from text |
-| `search_memories` | Hybrid semantic, BM25, and temporal retrieval |
-| `get_memories` | Fetch memories by ID or filters |
-| `delete_memory` | Delete a memory and clean all indexes |
-| `consolidate_memories` | Apply scoped decay and consolidation |
-| `get_memory_stats` | Return counts and index health data |
-| `end_session` | Mark a session as ended (sets ended_at timestamp) |
-
-Search weights must be finite, non-negative, and sum to `1.0`.
+| `search_memories` | Hybrid semantic + BM25 + temporal search |
+| `get_memories` | Fetch by ID or filter (scope, project) |
+| `delete_memory` | Delete and clean all indexes |
+| `consolidate_memories` | Apply decay, dedup, and compaction |
+| `get_memory_stats` | Counts, categories, scope breakdown |
+| `end_session` | Mark a session ended (`ended_at` timestamp) |
 
 ## Agent Guide
 
-Agents working in this repository should treat `opencode-memory-system.md` as the authoritative product specification and preserve these contracts:
+### Contracts
 
-1. Core memory behavior belongs in Rust. TypeScript remains a thin lifecycle adapter.
-2. Memory content is ADD-only. Access statistics, retention, importance, and archival metadata may be updated.
-3. Duplicate detection must respect scope and project boundaries.
-4. SQLite, USearch, Tantivy, and entity links must remain consistent after insertion or deletion.
-5. MCP stdout is reserved for protocol messages; diagnostics go to stderr.
-6. Tests use temporary isolated databases and indexes. They must not call real LLM endpoints.
+1. **ADD-only**: memory content is immutable. Only access stats, retention, importance, and archival metadata may be updated.
+2. **Rust core, TS thin**: memory logic in `memory-core`. TypeScript (`plugin/`) is a lifecycle adapter only.
+3. **Index consistency**: SQLite, USearch, Tantivy, and entity links must remain consistent through every insert and delete.
+4. **MCP protocol**: stdout reserved for JSON-RPC; diagnostics to stderr.
+5. **Scope isolation**: duplicate detection respects scope + project boundaries.
+6. **No real LLM in tests**: all tests use `api_key = "mock"`.
 
-### Code Discovery
+### Architecture
 
-This repository is indexed by `codebase-memory-mcp` as `cbrlm+D-memlong`. Prefer graph tools before text search when exploring code:
+```
+MCP Client → memory-mcp-server → memory-core
+                                    ├── SQLite (metadata, entities, stats)
+                                    ├── USearch HNSW (vector index)
+                                    ├── Tantivy BM25 (text index)
+                                    ├── extraction/  (LLM + embedding)
+                                    ├── consolidation/  (dedup, entity linking, Ebbinghaus decay)
+                                    └── retrieval/  (hybrid ranking, filtering)
+```
 
-1. `search_graph` or `rlm_filter`
-2. `trace_path`
-3. `rlm_read_symbol` or `get_code_snippet`
-4. `query_graph`
-5. `get_architecture`
+Default data location: `.opencode/`
 
-Use grep or file search for configuration, documentation, literal error messages, and other non-code content. Re-run `index_repository` after structural changes when the graph is stale.
-
-### Main Code Paths
+### Code Paths
 
 | Path | Responsibility |
-| --- | --- |
+|------|---------------|
 | `crates/memory-core/src/service.rs` | High-level orchestration |
 | `crates/memory-core/src/extraction/` | LLM extraction and embeddings |
-| `crates/memory-core/src/consolidation/` | Deduplication, entity linking, decay |
+| `crates/memory-core/src/consolidation/` | Dedup, entity linking, Ebbinghaus decay |
 | `crates/memory-core/src/retrieval/` | Hybrid ranking and filtering |
-| `crates/memory-core/src/storage/` | SQLite, USearch, and Tantivy adapters |
-| `crates/memory-mcp-server/src/server.rs` | MCP schemas and handlers |
+| `crates/memory-core/src/storage/` | SQLite, USearch, Tantivy adapters |
+| `crates/memory-mcp-server/src/server.rs` | MCP tool schemas and handlers |
 | `plugin/src/index.ts` | OpenCode lifecycle bridge |
 
-### Required Verification
+### Verification
 
 ```bash
-cargo fmt --all -- --check
-cargo test --workspace          # 15+ tests including MCP protocol smoke test
-cargo bench -p memory-core      # Criterion benchmarks (add_memory, search_memories)
+cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo build --release
-cd plugin
-npm ci
-npm test
+cargo bench -p memory-core
+cd plugin && npm ci && npm test
 ```
 
-The release server should remain below the 20 MB target documented in the specification.
+### Data Flow
 
-## Packaging
+```
+add_memory(content):
+  1. extraction::engine.extract(content) → Vec<ExtractedMemory>
+  2. extraction::engine.embed(chunk) → Vec<f32>
+  3. consolidation::engine.consolidate_single(chunk, vector, scope, ...)
+     a. vector_store.search(top 5 candidates)
+     b. dedup check (exact 0.92, near 0.75 + entity overlap)
+     c. insert: vector_store → text_index → entity linking → SQLite
+  4. text_index.flush()
 
-Create the release archive and SHA256 file:
+search_memories(query):
+  1. tokio::join!(llm_client.embed(query), bm25.search_normalized(query))
+  2. semantic.search(query_vec) → vector_ids
+  3. sqlite.get_memories_by_vector_ids() + get_by_ids()
+  4. fusion: 0.6*semantic + 0.3*bm25 + 0.1*temporal
+  5. filter by scope/project/category/importance/decay
+  6. tokio::spawn(update_access_stats)
 
-**Windows:**
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0
+consolidate_memories():
+  1. paginated (1000/page) load from SQLite
+  2. per memory: Ebbinghaus decay R(t) = e^(-t/S)
+  3. archive if R(t) < 0.1
+  4. compact tantivy + usearch indexes
 ```
 
-**Linux:**
+### Decay Formulas
+
+```
+Importance = 0.5 * llm_score + 0.3 * access_factor + 0.2 * recency_factor
+Retention  R(t) = e^(-t / S)        # Ebbinghaus
+Stability  S = importance * 30 days  # reinforced ×1.2 per access
+Recency    = e^(-0.001 * Δt_days)
+```
+
+## Docs
+
+- [Product spec](opencode-memory-system.md)
+- [Tech spec](spec.md)
+- [Task status](task.md)
+- [Lessons](lessons.md)
+
+## Uninstall
+
 ```bash
-./scripts/package-release.sh --version 0.1.0
+# Remove binaries and MCP config (keeps memory data)
+./uninstall.sh
+
+# Remove everything including stored memories
+./uninstall.sh --remove-data
 ```
-
-Artifacts are written under `target/`.
-
-## Documentation
-
-- Full product and technical specification: [`opencode-memory-system.md`](opencode-memory-system.md)
-- Condensed technical specification: [`spec.md`](spec.md)
-- Implementation status: [`task.md`](task.md)
-- Memory extraction skill: [`skills/memory-extraction.md`](skills/memory-extraction.md)
 
 ## License
 
