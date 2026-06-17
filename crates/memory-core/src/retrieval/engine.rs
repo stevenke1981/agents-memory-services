@@ -12,7 +12,7 @@ pub struct RetrievalEngine {
     llm_client: Arc<LlmClient>,
     embedding_model: String,
     default_weights: HybridWeights,
-        temporal_mu: f64,
+    temporal_mu: f64,
 }
 
 impl RetrievalEngine {
@@ -23,7 +23,7 @@ impl RetrievalEngine {
         llm_client: Arc<LlmClient>,
         embedding_model: &str,
         default_weights: HybridWeights,
-    temporal_mu: f64,
+        temporal_mu: f64,
     ) -> Self {
         Self {
             semantic: SemanticRetriever::new(vector_store),
@@ -62,7 +62,9 @@ impl RetrievalEngine {
         // Retrieve memory IDs for semantic results by searching SQLite for matching vector_ids
         let sem_vector_ids: Vec<i64> = sem_results.iter().map(|(vid, _)| *vid).collect();
         let sem_memories = if !sem_vector_ids.is_empty() {
-            self.sqlite.get_memories_by_vector_ids(&sem_vector_ids).await?
+            self.sqlite
+                .get_memories_by_vector_ids(&sem_vector_ids)
+                .await?
         } else {
             Vec::new()
         };

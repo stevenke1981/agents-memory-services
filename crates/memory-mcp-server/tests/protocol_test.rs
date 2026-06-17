@@ -4,14 +4,7 @@ use std::time::Duration;
 
 /// Locate the server binary relative to the current test executable.
 fn server_binary() -> std::path::PathBuf {
-    let mut path = std::env::current_exe().expect("current exe");
-    // Walk up from target/debug/deps/memory_mcp_server-<hash>.exe
-    path.pop(); // remove binary name
-    if path.ends_with("deps") {
-        path.pop(); // deps → debug
-    }
-    path.push("memory-mcp-server.exe");
-    path
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_memory-mcp-server"))
 }
 
 /// Create a temporary directory for the test database/indexes and return (dir, env_overrides).
@@ -94,10 +87,7 @@ fn health_check_returns_ok() {
     let env = TestEnv::new();
     let bin = server_binary();
 
-    if !bin.exists() {
-        eprintln!("Skipping test: binary not found at {}", bin.display());
-        return;
-    }
+    assert!(bin.exists(), "server binary not found at {}", bin.display());
 
     let output = Command::new(&bin)
         .arg("health")
@@ -125,10 +115,7 @@ fn mcp_protocol_full_lifecycle() {
     let env = TestEnv::new();
     let bin = server_binary();
 
-    if !bin.exists() {
-        eprintln!("Skipping test: binary not found at {}", bin.display());
-        return;
-    }
+    assert!(bin.exists(), "server binary not found at {}", bin.display());
 
     // Spawn the server with env overrides
     let mut child = Command::new(&bin)

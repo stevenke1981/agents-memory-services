@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use memory_core::config::MemoryConfig;
-use memory_core::models::{MemoryScope, SearchQuery, Memory};
+use memory_core::models::{Memory, MemoryScope, SearchQuery};
 use memory_core::service::MemoryService;
 use std::sync::Arc;
 
@@ -15,11 +15,7 @@ async fn build_service() -> Arc<MemoryService> {
             .join("bench.usearch")
             .to_string_lossy()
             .to_string(),
-        tantivy_path: dir
-            .path()
-            .join("tantivy")
-            .to_string_lossy()
-            .to_string(),
+        tantivy_path: dir.path().join("tantivy").to_string_lossy().to_string(),
         llm_api_base: "mock".to_string(),
         llm_api_key: "mock".to_string(),
         ..MemoryConfig::from_env().expect("config")

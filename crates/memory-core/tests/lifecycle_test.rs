@@ -83,13 +83,13 @@ async fn test_full_memory_lifecycle() {
         project_id: None,
         categories: None,
         created_after: None,
-            min_importance: None,
-            include_decayed: false,
-            session_id: None,
-            weights: None,
-        };
+        min_importance: None,
+        include_decayed: false,
+        session_id: None,
+        weights: None,
+    };
 
-        let results = service.search_memories(&query).await.unwrap();
+    let results = service.search_memories(&query).await.unwrap();
     assert!(!results.is_empty(), "Should find the stored memory");
     assert!(results[0].score_final > 0.5, "Score should be significant");
 

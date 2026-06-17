@@ -138,7 +138,10 @@ impl MemoryService {
         }
 
         // 3. Ensure session_stats row exists
-        let _ = self.sqlite.ensure_session(&session_id, project_id.as_deref()).await;
+        let _ = self
+            .sqlite
+            .ensure_session(&session_id, project_id.as_deref())
+            .await;
 
         let extracted_count = extracted_chunks.len() as i64;
         let mut added_count = 0i64;
@@ -189,14 +192,7 @@ impl MemoryService {
         // Update session stats
         let _ = self
             .sqlite
-            .update_session_stats(
-                &session_id,
-                extracted_count,
-                added_count,
-                dedup_count,
-                0,
-                0,
-            )
+            .update_session_stats(&session_id, extracted_count, added_count, dedup_count, 0, 0)
             .await;
 
         Ok(added)

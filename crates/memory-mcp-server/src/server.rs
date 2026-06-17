@@ -2,7 +2,6 @@ use memory_core::{
     models::{HybridWeights, MemoryScope, SearchQuery},
     service::MemoryService,
 };
-use std::str::FromStr;
 use rmcp::{
     model::{CallToolResult, Content, ServerInfo},
     tool, Error as McpError, ServerHandler,
@@ -10,6 +9,7 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
+use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -126,9 +126,8 @@ impl MemoryMcpServer {
         #[tool(aggr)] input: AddMemoryInput,
     ) -> Result<CallToolResult, McpError> {
         let scope_raw = input.scope.as_deref().unwrap_or("Global");
-        let scope = MemoryScope::from_str(scope_raw).map_err(|e| {
-            McpError::invalid_params(format!("Invalid scope: {e}"), None)
-        })?;
+        let scope = MemoryScope::from_str(scope_raw)
+            .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))?;
 
         // Validate scope requirements
         match &scope {
@@ -183,9 +182,8 @@ impl MemoryMcpServer {
             .scope
             .as_deref()
             .map(|s| {
-                MemoryScope::from_str(s).map_err(|e| {
-                    McpError::invalid_params(format!("Invalid scope: {e}"), None)
-                })
+                MemoryScope::from_str(s)
+                    .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))
             })
             .transpose()?;
 
@@ -246,9 +244,8 @@ impl MemoryMcpServer {
             .scope
             .as_deref()
             .map(|s| {
-                MemoryScope::from_str(s).map_err(|e| {
-                    McpError::invalid_params(format!("Invalid scope: {e}"), None)
-                })
+                MemoryScope::from_str(s)
+                    .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))
             })
             .transpose()?;
 
@@ -300,9 +297,8 @@ impl MemoryMcpServer {
             .scope
             .as_deref()
             .map(|s| {
-                MemoryScope::from_str(s).map_err(|e| {
-                    McpError::invalid_params(format!("Invalid scope: {e}"), None)
-                })
+                MemoryScope::from_str(s)
+                    .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))
             })
             .transpose()?;
         self.service

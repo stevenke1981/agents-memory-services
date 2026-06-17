@@ -83,7 +83,8 @@ async fn main() -> anyhow::Result<()> {
             scope,
             project_id,
         } => {
-            let memory_scope = scope.parse::<MemoryScope>()
+            let memory_scope = scope
+                .parse::<MemoryScope>()
                 .map_err(|e| anyhow::anyhow!("Invalid scope: {e}"))?;
 
             println!("Extracting and consolidating memory...");

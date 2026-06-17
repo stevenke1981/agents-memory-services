@@ -21,7 +21,7 @@ Legend:
 - MCP protocol smoke test (`protocol_test.rs`) spawns the binary and performs full MCP lifecycle.
 - Criterion benchmarks for `add_memory_single` (~183µs) and `search_memories_top5` (~128µs).
 - Coverage measurement via `scripts/coverage.ps1` using `cargo-llvm-cov`.
-- Plugin helpers split into `response.ts`; `index.ts` lifecycle-only at 110 lines.
+- Plugin helpers split into `response.ts`; `index.ts` lifecycle-only and under the 100-line target.
 
 ## P0 Todo
 
@@ -78,7 +78,7 @@ Legend:
 ## P2 Todo
 
 - [x] Reconcile the TypeScript shim size rule with the current robust parser.
-  - Commit HEAD — helpers moved to `plugin/src/response.ts`; `index.ts` reduced to 110 lines (lifecycle-only). Tests pass (2/2).
+  - Commit HEAD — helpers moved to `plugin/src/response.ts`; `index.ts` is lifecycle-only and under the 100-line target. Tests pass (2/2).
   - Files: `plugin/src/index.ts`, `plugin/src/response.ts`, `plugin/test/index.test.cjs`.
 
 - [x] Update OpenCode config documentation to the current JSONC path and key shape.

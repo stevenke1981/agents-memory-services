@@ -71,9 +71,8 @@ if (-not $FromSource) {
 if ($FromSource) {
     if (-not $SkipBuild) {
         Write-Host "Building $ServerName from source..."
-        $CargoCmd = "cargo build --release"
-        Write-Host "Running: $CargoCmd"
-        Invoke-Expression $CargoCmd
+        Write-Host "Running: cargo build --release"
+        & cargo build --release
         if ($LASTEXITCODE -ne 0) {
             throw "Cargo build failed"
         }

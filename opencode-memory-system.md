@@ -10,7 +10,7 @@
 > - MCP entry key: `env` → `environment`
 > - MCP 傳輸: 自訂 JSON-RPC stdio loop → `rmcp` crate
 > - 向量索引: pure Rust flat-scan fallback → USearch HNSW
-> - Plugin shim 行數目標: ≤100 → ~170 行（含 response 正規化輔助）
+> - Plugin shim 行數目標: ≤100 → 已修正（`index.ts` lifecycle-only；response 正規化移至 `response.ts`）
 > - MCP 工具數量: 6 → 7（新增 `end_session`）
 > - 這些偏差已反映在 `docs/spec-gap-todo.md` 和 `docs/AGENTS.md` 中。
 
