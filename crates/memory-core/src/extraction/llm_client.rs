@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct LlmClient {
     client: reqwest::Client,
     api_base: String,
+    embedding_api_base: String,
     api_key: String,
 }
 
@@ -60,10 +61,11 @@ struct EmbeddingData {
 }
 
 impl LlmClient {
-    pub fn new(api_base: &str, api_key: &str) -> Self {
+    pub fn new(api_base: &str, embedding_api_base: &str, api_key: &str) -> Self {
         Self {
             client: reqwest::Client::new(),
             api_base: api_base.trim_end_matches('/').to_string(),
+            embedding_api_base: embedding_api_base.trim_end_matches('/').to_string(),
             api_key: api_key.to_string(),
         }
     }
@@ -152,10 +154,10 @@ impl LlmClient {
     pub async fn embed(&self, text: &str, model: &str) -> Result<Vec<f32>> {
         if self.api_key == "mock" || (self.api_key == "local" && self.api_base == "mock") {
             // Return dummy vector of dimension 1536 (default)
-            return Ok(vec![0.1; 1536]);
+            return Ok(vec![0.1; 1024]);
         }
 
-        let url = format!("{}/embeddings", self.api_base);
+        let url = format!("{}/embeddings", self.embedding_api_base);
         let req = EmbeddingRequest {
             model: model.to_string(),
             input: text.to_string(),

@@ -17,6 +17,7 @@ async fn build_service() -> Arc<MemoryService> {
             .to_string(),
         tantivy_path: dir.path().join("tantivy").to_string_lossy().to_string(),
         llm_api_base: "mock".to_string(),
+        embedding_api_base: "mock".to_string(),
         llm_api_key: "mock".to_string(),
         ..MemoryConfig::from_env().expect("config")
     };

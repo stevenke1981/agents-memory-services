@@ -10,6 +10,21 @@
 
 Core in Rust, exposed as an MCP server (`ams` binary). Optional TypeScript shim for OpenCode lifecycle hooks. Successor to the original `memlong` / `opencode-memory` project.
 
+## Prerequisites
+
+AMS expects a local OpenAI-compatible endpoint. With **llama.cpp**:
+
+```bash
+# Start extraction server (Phi-4)
+llama-server -m phi-4-Q4_K_M.gguf --port 8080 --ctx-size 4096
+
+# Start embedding server (qwen3-embedding:0.6b Q4)
+llama-server -m qwen3-embedding-0.6b-Q4_K_M.gguf --port 8081 \
+  --embedding --pooling mean --no-context --cont-batching
+```
+
+Set `LLM_API_BASE` to the extraction server and `EMBEDDING_API_BASE` to the embedding server if they differ; by default AMS uses `LLM_API_BASE` for both.
+
 ## Quick Start
 
 ```bash
@@ -24,9 +39,9 @@ cargo build --release
 # Configure (set before starting)
 export LLM_API_BASE="http://localhost:8080/v1"
 export LLM_API_KEY="local"
-export EXTRACTION_MODEL="your-chat-model"
-export EMBEDDING_MODEL="your-embedding-model"
-export EMBEDDING_DIM="1536"
+export EXTRACTION_MODEL="phi-4"
+export EMBEDDING_MODEL="qwen3-embedding:0.6b"
+export EMBEDDING_DIM="1024"
 
 # Verify
 ./target/release/ams health
@@ -46,11 +61,12 @@ cargo run -p agents-memory-cli -- consolidate
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_API_BASE` | `http://localhost:8080/v1` | OpenAI-compatible endpoint |
+| `LLM_API_BASE` | `http://localhost:8080/v1` | OpenAI-compatible endpoint (phi-4) |
+| `EMBEDDING_API_BASE` | (same as LLM_API_BASE) | Separate endpoint for embeddings |
 | `LLM_API_KEY` | `local` | API key |
-| `EXTRACTION_MODEL` | `llama-3-8b` | Chat model for extraction |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
-| `EMBEDDING_DIM` | `1536` | Embedding dimensions (must match model) |
+| `EXTRACTION_MODEL` | `phi-4` | Chat model for extraction (llama.cpp) |
+| `EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Embedding model (Q4, llama.cpp) |
+| `EMBEDDING_DIM` | `1024` | Embedding dimensions (must match model) |
 | `PROJECT_ROOT` | current dir | Root for `.opencode/` data directory |
 | `MEMORY_DB_PATH` | `.opencode/memory.db` | SQLite path |
 | `MEMORY_VECTOR_PATH` | `.opencode/vectors.usearch` | USearch index path |

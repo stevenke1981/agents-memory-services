@@ -8,6 +8,7 @@ pub struct MemoryConfig {
     pub vector_path: String,
     pub tantivy_path: String,
     pub llm_api_base: String,
+    pub embedding_api_base: String,
     pub llm_api_key: String,
     pub embedding_model: String,
     pub embedding_dim: usize,
@@ -47,18 +48,21 @@ impl MemoryConfig {
         let llm_api_base =
             env::var("LLM_API_BASE").unwrap_or_else(|_| "http://localhost:8080/v1".to_string());
 
+        let embedding_api_base = env::var("EMBEDDING_API_BASE")
+            .unwrap_or_else(|_| llm_api_base.clone());
+
         let llm_api_key = env::var("LLM_API_KEY").unwrap_or_else(|_| "local".to_string());
 
         let embedding_model =
-            env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "text-embedding-3-small".to_string());
+            env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "qwen3-embedding:0.6b".to_string());
 
         let embedding_dim = env::var("EMBEDDING_DIM")
             .ok()
             .and_then(|val| val.parse().ok())
-            .unwrap_or(1536);
+            .unwrap_or(1024);
 
         let extraction_model =
-            env::var("EXTRACTION_MODEL").unwrap_or_else(|_| "llama-3-8b".to_string());
+            env::var("EXTRACTION_MODEL").unwrap_or_else(|_| "phi-4".to_string());
 
         let extraction_max_tokens = env::var("EXTRACTION_MAX_TOKENS")
             .ok()
@@ -110,6 +114,7 @@ impl MemoryConfig {
             vector_path,
             tantivy_path,
             llm_api_base,
+            embedding_api_base,
             llm_api_key,
             embedding_model,
             embedding_dim,

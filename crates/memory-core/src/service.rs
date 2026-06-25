@@ -37,7 +37,7 @@ impl MemoryService {
 
         let text_index = Arc::new(TextIndex::new(&config.tantivy_path)?);
 
-        let llm_client = Arc::new(LlmClient::new(&config.llm_api_base, &config.llm_api_key));
+        let llm_client = Arc::new(LlmClient::new(&config.llm_api_base, &config.embedding_api_base, &config.llm_api_key));
 
         let extraction_config = ExtractionConfig {
             model: config.extraction_model.clone(),
