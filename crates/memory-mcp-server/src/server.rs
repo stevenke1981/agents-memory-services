@@ -107,6 +107,20 @@ pub struct RepairIndexesInput {
     pub dry_run: Option<bool>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct UndeleteMemoryInput {
+    #[schemars(description = "Memory UUID to restore from soft-deleted status")]
+    pub id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct CompactDeletedInput {
+    #[schemars(
+        description = "Confirm permanent deletion of all soft-deleted memories. Must be true."
+    )]
+    pub confirm: Option<bool>,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MemoryMcpServer Implementation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -387,7 +401,7 @@ impl MemoryMcpServer {
 
     #[tool(
         name = "repair_indexes",
-        description = "Diagnose and repair index inconsistencies: orphaned entity references, missing embedding metadata, and vector store vs SQLite count mismatches. Run this periodically or when get_memory_stats shows discrepancies."
+        description = "Diagnose and repair index inconsistencies: orphaned entity references and vector store vs SQLite count mismatches. Run this periodically or when get_memory_stats shows discrepancies. Embedding metadata backfill runs automatically at startup."
     )]
     async fn repair_indexes(
         &self,
@@ -416,6 +430,61 @@ impl MemoryMcpServer {
         let text = serde_json::to_string_pretty(&result).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
+
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
+
+    #[tool(
+        name = "undelete_memory",
+        description = "Restore a previously soft-deleted memory to active status. Note: the memory will be found by ID lookup and listing, but will not appear in hybrid search results until re-embedding occurs (via consolidate_memories)."
+    )]
+    async fn undelete_memory(
+        &self,
+        #[tool(aggr)] input: UndeleteMemoryInput,
+    ) -> Result<CallToolResult, McpError> {
+        let restored = self.service.undelete_memory(&input.id).await.map_err(|e| {
+            McpError::internal_error(format!("Failed to undelete memory: {}", e), None)
+        })?;
+
+        let text = serde_json::to_string_pretty(&serde_json::json!({
+            "restored": restored,
+            "id": input.id,
+        }))
+        .map_err(|e| McpError::internal_error(format!("Failed to serialize: {}", e), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(text)]))
+    }
+
+    #[tool(
+        name = "compact_deleted",
+        description = "Permanently remove all soft-deleted memories from SQLite and indexes. This is irreversible. Use confirm=true to execute."
+    )]
+    async fn compact_deleted(
+        &self,
+        #[tool(aggr)] input: CompactDeletedInput,
+    ) -> Result<CallToolResult, McpError> {
+        if !input.confirm.unwrap_or(false) {
+            let deleted_count: i64 = self.service.count_deleted().await.map_err(|e| {
+                McpError::internal_error(format!("Failed to count deleted: {}", e), None)
+            })?;
+            let text = serde_json::to_string_pretty(&serde_json::json!({
+                "confirm_required": true,
+                "deleted_memories_count": deleted_count,
+                "message": "Pass confirm=true to permanently remove all soft-deleted memories. This is irreversible."
+            }))
+            .map_err(|e| McpError::internal_error(format!("Failed to serialize: {}", e), None))?;
+            return Ok(CallToolResult::success(vec![Content::text(text)]));
+        }
+
+        let purged = self.service.compact_deleted().await.map_err(|e| {
+            McpError::internal_error(format!("Failed to compact deleted: {}", e), None)
+        })?;
+
+        let text = serde_json::to_string_pretty(&serde_json::json!({
+            "purged": purged,
+            "status": "completed"
+        }))
+        .map_err(|e| McpError::internal_error(format!("Failed to serialize: {}", e), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }

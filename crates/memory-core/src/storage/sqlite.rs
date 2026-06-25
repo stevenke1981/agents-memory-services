@@ -21,7 +21,15 @@ impl SqliteStore {
         // Run migrations
         sqlx::migrate!("src/storage/migrations").run(&pool).await?;
 
-        Ok(Self { pool })
+        let store = Self { pool };
+
+        // One-time post-migration backfill for pre-v2 memories
+        let backfilled = store.backfill_embedding_metadata().await?;
+        if backfilled > 0 {
+            tracing::info!("Backfilled embedding metadata for {backfilled} pre-v2 memories");
+        }
+
+        Ok(store)
     }
 
     pub async fn insert_memory(&self, memory: &Memory) -> Result<()> {
@@ -65,10 +73,12 @@ impl SqliteStore {
     }
 
     pub async fn get_memory_by_vector_id(&self, vector_id: i64) -> Result<Option<Memory>> {
-        let memory = sqlx::query_as::<_, Memory>("SELECT * FROM memories WHERE vector_id = ?")
-            .bind(vector_id)
-            .fetch_optional(&self.pool)
-            .await?;
+        let memory = sqlx::query_as::<_, Memory>(
+            "SELECT * FROM memories WHERE vector_id = ? AND status = 'active'",
+        )
+        .bind(vector_id)
+        .fetch_optional(&self.pool)
+        .await?;
         Ok(memory)
     }
 
@@ -78,7 +88,8 @@ impl SqliteStore {
         }
 
         // SQLite has parameter limits, but for typical top_k <= 50, it is well within limits.
-        let mut query_builder = sqlx::QueryBuilder::new("SELECT * FROM memories WHERE id IN (");
+        let mut query_builder =
+            sqlx::QueryBuilder::new("SELECT * FROM memories WHERE status = 'active' AND id IN (");
         let mut separated = query_builder.separated(", ");
         for id in ids {
             separated.push_bind(id);
@@ -90,14 +101,60 @@ impl SqliteStore {
         Ok(memories)
     }
 
+    /// Soft-delete: set status = 'deleted' instead of hard DELETE.
+    /// Returns true if a row was updated.
     pub async fn delete_memory(&self, id: &str) -> Result<bool> {
-        let rows_affected = sqlx::query("DELETE FROM memories WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?
-            .rows_affected();
+        let rows_affected = sqlx::query(
+            "UPDATE memories SET status = 'deleted', updated_at = ? WHERE id = ? AND status = 'active'",
+        )
+        .bind(chrono::Utc::now().timestamp_millis())
+        .bind(id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
 
         Ok(rows_affected > 0)
+    }
+
+    /// Permanent undelete: restore a soft-deleted memory to active status.
+    pub async fn undelete_memory(&self, id: &str) -> Result<bool> {
+        let rows_affected = sqlx::query(
+            "UPDATE memories SET status = 'active', updated_at = ? WHERE id = ? AND status = 'deleted'",
+        )
+        .bind(chrono::Utc::now().timestamp_millis())
+        .bind(id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        Ok(rows_affected > 0)
+    }
+
+    /// Permanently remove all soft-deleted memories and return the count.
+    pub async fn compact_deleted(&self) -> Result<i64> {
+        let deleted: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT id, COALESCE(vector_id, -1) FROM memories WHERE status = 'deleted'",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let count = deleted.len() as i64;
+        for (id, _vector_id) in &deleted {
+            sqlx::query("DELETE FROM memories WHERE id = ?")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(count)
+    }
+
+    /// List soft-deleted memories (for admin/debug)
+    pub async fn get_deleted_memories(&self, limit: usize) -> Result<Vec<Memory>> {
+        let memories = sqlx::query_as::<_, Memory>(
+            "SELECT * FROM memories WHERE status = 'deleted' ORDER BY updated_at DESC LIMIT ?",
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(memories)
     }
 
     pub async fn unlink_memory_from_entities(&self, memory_id: &str) -> Result<()> {
@@ -135,7 +192,8 @@ impl SqliteStore {
         project_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Memory>> {
-        let mut query_builder = sqlx::QueryBuilder::new("SELECT * FROM memories WHERE 1=1 ");
+        let mut query_builder =
+            sqlx::QueryBuilder::new("SELECT * FROM memories WHERE status = 'active' ");
 
         if let Some(sc) = scope {
             query_builder.push(" AND scope = ");
@@ -211,15 +269,27 @@ impl SqliteStore {
             .fetch_one(&self.pool)
             .await?;
 
-        let categories: Vec<(String, i64)> =
-            sqlx::query_as("SELECT category, COUNT(*) FROM memories GROUP BY category")
-                .fetch_all(&self.pool)
+        let active_count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM memories WHERE status = 'active'")
+                .fetch_one(&self.pool)
                 .await?;
 
-        let scopes: Vec<(String, i64)> =
-            sqlx::query_as("SELECT scope, COUNT(*) FROM memories GROUP BY scope")
-                .fetch_all(&self.pool)
+        let deleted_count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM memories WHERE status = 'deleted'")
+                .fetch_one(&self.pool)
                 .await?;
+
+        let categories: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT category, COUNT(*) FROM memories WHERE status = 'active' GROUP BY category",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let scopes: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT scope, COUNT(*) FROM memories WHERE status = 'active' GROUP BY scope",
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let entity_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM entities")
             .fetch_one(&self.pool)
@@ -237,6 +307,8 @@ impl SqliteStore {
 
         let mut stats = serde_json::Map::new();
         stats.insert("total_memories".to_string(), total_count.0.into());
+        stats.insert("active_memories".to_string(), active_count.0.into());
+        stats.insert("deleted_memories".to_string(), deleted_count.0.into());
         stats.insert("categories".to_string(), serde_json::Value::Object(cat_map));
         stats.insert("scopes".to_string(), serde_json::Value::Object(scope_map));
         stats.insert("entity_count".to_string(), entity_count.0.into());
@@ -418,7 +490,8 @@ impl SqliteStore {
         scope: Option<&str>,
         project_id: Option<&str>,
     ) -> Result<Vec<Memory>> {
-        let mut query_builder = sqlx::QueryBuilder::new("SELECT * FROM memories WHERE 1=1");
+        let mut query_builder =
+            sqlx::QueryBuilder::new("SELECT * FROM memories WHERE status = 'active'");
         if let Some(scope) = scope {
             query_builder.push(" AND scope = ").push_bind(scope);
         }

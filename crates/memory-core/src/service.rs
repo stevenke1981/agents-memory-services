@@ -181,11 +181,17 @@ impl MemoryService {
         }
     }
 
-    /// Delete memory by ID
+    /// Soft-delete memory by ID: marks status='deleted' in SQLite, removes
+    /// vector/text index entries immediately. The SQLite row is preserved
+    /// for potential recovery via undelete_memory.
     pub async fn delete_memory(&self, id: &str) -> Result<bool> {
         let Some(memory) = self.sqlite.get_memory(id).await? else {
             return Ok(false);
         };
+        // Only active memories can be deleted
+        if memory.status != "active" {
+            return Ok(false);
+        }
         let deleted = self.sqlite.delete_memory(id).await?;
         if deleted {
             self.vector_store.remove(memory.vector_id)?;
@@ -193,6 +199,26 @@ impl MemoryService {
             self.sqlite.unlink_memory_from_entities(id).await?;
         }
         Ok(deleted)
+    }
+
+    /// Restore a soft-deleted memory. Note: vector/text index entries are not
+    /// automatically re-created — the memory will be found by ID/listing but
+    /// will not appear in hybrid search results until re-embedding occurs.
+    pub async fn undelete_memory(&self, id: &str) -> Result<bool> {
+        self.sqlite.undelete_memory(id).await
+    }
+
+    /// Permanently remove all soft-deleted memories. Returns count of purged rows.
+    /// Vector/text cleanup is applied if entries still exist.
+    pub async fn compact_deleted(&self) -> Result<i64> {
+        let deleted_list = self.sqlite.get_deleted_memories(10_000).await?;
+        let _count = deleted_list.len() as i64;
+        for mem in &deleted_list {
+            // Attempt vector/text cleanup (may already be removed by delete flow)
+            let _ = self.vector_store.remove(mem.vector_id);
+            let _ = self.text_index.delete_document(&mem.id);
+        }
+        self.sqlite.compact_deleted().await
     }
 
     /// Consolidate memories (decay calculations)
@@ -206,7 +232,12 @@ impl MemoryService {
             .await
     }
 
-    /// Get stats
+    /// Count soft-deleted memories
+    pub async fn count_deleted(&self) -> Result<i64> {
+        self.sqlite.count_by_status("deleted").await
+    }
+
+    /// Get stats (includes active_memories, deleted_memories, vector_count, unresolved_repairs)
     pub async fn get_stats(&self) -> Result<serde_json::Value> {
         let mut stats = self.sqlite.get_stats().await?;
         if let Some(object) = stats.as_object_mut() {
@@ -214,10 +245,6 @@ impl MemoryService {
             object.insert(
                 "unresolved_repairs".to_string(),
                 self.sqlite.count_unresolved_repairs().await?.into(),
-            );
-            object.insert(
-                "active_memories".to_string(),
-                self.sqlite.count_by_status("active").await?.into(),
             );
         }
         Ok(stats)
@@ -249,19 +276,7 @@ impl MemoryService {
             }));
         }
 
-        // 2. Backfill embedding metadata for pre-v2 memories
-        let backfilled = self.sqlite.backfill_embedding_metadata().await?;
-        if backfilled > 0 {
-            issues_fixed += backfilled;
-            details.push(serde_json::json!({
-                "issue": "missing_embedding_metadata",
-                "severity": "info",
-                "fixed": backfilled,
-                "detail": format!("Backfilled embedding model/dim for {backfilled} memories")
-            }));
-        }
-
-        // 3. Vector store consistency: count active memories vs vector store size
+        // 2. Vector store consistency: count active memories vs vector store size
         let active_count = self.sqlite.count_by_status("active").await?;
         let vector_count = self.vector_store.size() as i64;
         if active_count != vector_count {

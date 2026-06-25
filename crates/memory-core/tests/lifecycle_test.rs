@@ -226,7 +226,15 @@ async fn delete_cleans_vector_and_entity_indexes() {
     assert!(service.delete_memory(id).await.unwrap());
 
     let after = service.get_stats().await.unwrap();
-    assert_eq!(after["total_memories"], 0);
-    assert_eq!(after["vector_count"], 0);
-    assert_eq!(after["entity_count"], 0);
+    // Soft-delete: SQLite row preserved with status='deleted'
+    assert_eq!(after["active_memories"], 0, "active should be 0");
+    assert_eq!(after["deleted_memories"], 1, "deleted should be 1");
+    assert!(after["total_memories"].as_i64().unwrap() >= 1);
+    assert_eq!(after["vector_count"], 0, "vector should be cleaned");
+    assert_eq!(after["entity_count"], 0, "entities should be cleaned");
+
+    // Verify it can be restored
+    assert!(service.undelete_memory(id).await.unwrap());
+    let restored = service.get_stats().await.unwrap();
+    assert_eq!(restored["active_memories"], 1);
 }

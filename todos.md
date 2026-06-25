@@ -80,8 +80,13 @@
 - [x] `repair_indexes` 含 entity reference cleanup、embedding metadata backfill、vector store consistency check。
 - [x] `repair_indexes` 自動記入 repair queue。
 - [x] `get_memory_stats` 回傳 active_memories、unresolved_repairs、vector_count。
-- [ ] 持久化 migration：依照 schema_version 2 執行 backfill（已有 `backfill_embedding_metadata` 方法）。
-- [ ] Delete 流程改為 tombstone + compaction，或保留 hard delete 但新增 archive。
+- [x] 持久化 migration：`SqliteStore::new()` startup 自動 backfill pre-v2 memories。
+- [x] `backfill_embedding_metadata` 從 `repair_indexes` 移至 startup（不再每次 repair 都掃描）。
+- [x] Soft-delete / tombstone：`delete_memory` SET status='deleted'，保留 SQLite row。
+- [x] `undelete_memory` MCP tool：恢復已 soft-deleted 的記憶。
+- [x] `compact_deleted` MCP tool：永久清除已刪除記憶（需 confirm=true）。
+- [x] 所有查詢方法統一過濾 `WHERE status = 'active'`（`get_by_ids`、`list_memories`、`get_memory_by_vector_id`、`get_memories_for_decay`）。
+- [x] `get_memory_stats` 回傳 `active_memories`、`deleted_memories`。
 
 ## P2：OpenCode plugin
 
@@ -136,6 +141,9 @@
 - [x] P2 ConsolidationEngine 寫入 embedding metadata + content_hash
 - [x] P2 `repair_indexes` MCP tool（entity cleanup + metadata backfill + vector count check）
 - [x] P2 `get_memory_stats` 回傳 active_memories + unresolved_repairs
+- [x] P2 Soft-delete: delete_memory SET status='deleted' + undelete_memory + compact_deleted
+- [x] P2 `backfill_embedding_metadata` 移至 SqliteStore::new() startup（不再重複掃描）
+- [x] P2 查詢方法統一過濾 `status = 'active'`
 
 ## Final gate
 
