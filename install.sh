@@ -28,9 +28,9 @@ done
 NORMALIZE_VERSION="${VERSION#v}"
 TAG_VERSION="v$NORMALIZE_VERSION"
 
-SERVER_NAME="opencode-memory"
-BINARY_NAME="opencode-memory"
-TARGET_DIR="${HOME}/.config/${SERVER_NAME}/bin"
+SERVER_NAME="ams"
+BINARY_NAME="memory-mcp-server"
+TARGET_DIR="${HOME}/.config/agents-memory-services/bin"
 STABLE_EXE="${TARGET_DIR}/${BINARY_NAME}"
 
 ARCH="$(uname -m)"
@@ -47,9 +47,9 @@ SOURCE_EXE=""
 # --- Download release ---
 if ! $FROM_SOURCE; then
     ARCHIVE_NAME="${SERVER_NAME}-${TAG_VERSION}-${LINUX_ARCH}.tar.gz"
-    URL="https://github.com/stevenke1981/memlong/releases/download/${TAG_VERSION}/${ARCHIVE_NAME}"
+    URL="https://github.com/stevenke1981/agents-memory-services/releases/download/${TAG_VERSION}/${ARCHIVE_NAME}"
 
-    TEMP_DIR="$(mktemp -d "/tmp/${SERVER_NAME}-install-XXXXXX")"
+    TEMP_DIR="$(mktemp -d "/tmp/ams-install-XXXXXX")"
     ARCHIVE_PATH="${TEMP_DIR}/${ARCHIVE_NAME}"
 
     echo "Attempting to download release version ${TAG_VERSION} from ${URL}..."

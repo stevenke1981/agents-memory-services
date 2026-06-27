@@ -44,7 +44,37 @@ export EMBEDDING_MODEL="qwen3-embedding:0.6b"
 export EMBEDDING_DIM="1024"
 
 # Verify
-./target/release/ams health
+./target/release/memory-mcp-server health
+```
+
+### OpenCode Setup
+
+Add `ams` to your OpenCode MCP servers and load the lifecycle plugin by editing `~/.config/opencode/opencode.json` (or `opencode.jsonc`):
+
+```json
+{
+  "mcp": {
+    "ams": {
+      "type": "local",
+      "command": ["~/.config/agents-memory-services/bin/memory-mcp-server.exe"],
+      "enabled": true,
+      "timeout": 120000
+    }
+  },
+  "plugin": [
+    "~/.config/opencode/plugins/opencode-agent-memory-tools.js"
+  ]
+}
+```
+
+Linux/macOS path: `~/.config/agents-memory-services/bin/memory-mcp-server`
+
+The plugin (`plugin/dist/index.js`) hooks into `onChatStart`, `onMessageComplete`, and `onSessionEnd` to automatically search, store, and consolidate memories across conversations. Copy it to `~/.config/opencode/plugins/` or reference it from the repo:
+
+```bash
+# From repo root
+cp plugin/dist/index.js ~/.config/opencode/plugins/opencode-agent-memory-tools.js
+cp plugin/dist/response.js ~/.config/opencode/plugins/opencode-agent-memory-response.js
 ```
 
 ### CLI Debug

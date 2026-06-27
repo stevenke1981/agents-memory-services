@@ -9,8 +9,8 @@ $ErrorActionPreference = "Stop"
 # Ensure security protocols support TLS 1.2 for download
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$ServerName = "opencode-memory"
-$BinaryName = "opencode-memory.exe"
+$ServerName = "ams"
+$BinaryName = "memory-mcp-server.exe"
 
 # Resolve target directory
 $UserProfile = if ($env:USERPROFILE) { $env:USERPROFILE } else { [System.Environment]::GetFolderPath('UserProfile') }
@@ -30,9 +30,9 @@ if (-not $FromSource) {
     }
 
     $ZipName = "$ServerName-$TagVersion-x86_64-pc-windows-msvc.zip"
-    $Url = "https://github.com/stevenke1981/memlong/releases/download/$TagVersion/$ZipName"
+    $Url = "https://github.com/stevenke1981/agents-memory-services/releases/download/$TagVersion/$ZipName"
     
-    $TempDir = Join-Path $env:TEMP "opencode-memory-install-$(Get-Random)"
+    $TempDir = Join-Path $env:TEMP "ams-install-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
     $ZipPath = Join-Path $TempDir $ZipName
 

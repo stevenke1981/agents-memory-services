@@ -1,4 +1,4 @@
-# Memlong
+# Agents Memory Service (AMS)
 
 <div align="right">
 
@@ -14,8 +14,8 @@
 
 ```bash
 # 編譯
-git clone https://github.com/stevenke1981/memlong.git
-cd memlong
+git clone https://github.com/stevenke1981/agents-memory-services.git
+cd agents-memory-services
 cargo build --release
 
 # 安裝
@@ -30,6 +30,39 @@ export EMBEDDING_DIM="1536"
 
 # 驗證
 ./target/release/memory-mcp-server health
+
+# 或直接使用 ams 別名
+./target/release/ams health
+```
+
+### OpenCode 整合設定
+
+在 `~/.config/opencode/opencode.json`（或 `opencode.jsonc`）中加入 `ams` MCP 伺服器與生命週期 plugin：
+
+```json
+{
+  "mcp": {
+    "ams": {
+      "type": "local",
+      "command": ["~/.config/agents-memory-services/bin/memory-mcp-server.exe"],
+      "enabled": true,
+      "timeout": 120000
+    }
+  },
+  "plugin": [
+    "~/.config/opencode/plugins/opencode-agent-memory-tools.js"
+  ]
+}
+```
+
+Linux/macOS 路徑：`~/.config/agents-memory-services/bin/memory-mcp-server`
+
+plugin（`plugin/dist/index.js`）會自動在 `onChatStart`、`onMessageComplete`、`onSessionEnd` 時搜尋、儲存、並合併記憶。將編譯檔複製到 plugin 目錄：
+
+```bash
+# 從 repo 根目錄執行
+cp plugin/dist/index.js ~/.config/opencode/plugins/opencode-agent-memory-tools.js
+cp plugin/dist/response.js ~/.config/opencode/plugins/opencode-agent-memory-response.js
 ```
 
 ### CLI 偵錯
