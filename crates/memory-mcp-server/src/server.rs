@@ -360,9 +360,10 @@ impl MemoryMcpServer {
         &self,
         #[tool(aggr)] _input: EmptyInput,
     ) -> Result<CallToolResult, McpError> {
-        let stats = self.service.get_stats().await.map_err(|e| {
-            McpError::internal_error(format!("Failed to get stats: {}", e), None)
-        })?;
+        let stats =
+            self.service.get_stats().await.map_err(|e| {
+                McpError::internal_error(format!("Failed to get stats: {}", e), None)
+            })?;
         let text = serde_json::to_string_pretty(&stats).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;

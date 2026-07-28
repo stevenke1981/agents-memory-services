@@ -244,11 +244,7 @@ fn normalize_active_weights(
     } else {
         0.0
     };
-    let bm25 = if bm25_available {
-        configured.bm25
-    } else {
-        0.0
-    };
+    let bm25 = if bm25_available { configured.bm25 } else { 0.0 };
     let temporal = configured.temporal;
     let total = semantic + bm25 + temporal;
 

@@ -87,12 +87,8 @@ impl LlmClient {
             100,
             120_000,
         );
-        let chat_timeout = read_env_duration(
-            "LLM_CHAT_TIMEOUT_MS",
-            DEFAULT_CHAT_TIMEOUT_MS,
-            500,
-            600_000,
-        );
+        let chat_timeout =
+            read_env_duration("LLM_CHAT_TIMEOUT_MS", DEFAULT_CHAT_TIMEOUT_MS, 500, 600_000);
         let embedding_timeout = read_env_duration(
             "EMBEDDING_TIMEOUT_MS",
             DEFAULT_EMBEDDING_TIMEOUT_MS,
@@ -234,7 +230,9 @@ impl LlmClient {
             .data
             .first()
             .map(|data| data.embedding.clone())
-            .ok_or_else(|| MemoryError::Other("No embedding returned from embedding API".to_string()))
+            .ok_or_else(|| {
+                MemoryError::Other("No embedding returned from embedding API".to_string())
+            })
     }
 
     fn is_mock(&self) -> bool {
