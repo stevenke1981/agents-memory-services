@@ -8,7 +8,12 @@ use tracing_subscriber::fmt::format::FmtSpan;
 mod server;
 
 const SERVER_NAME: &str = "ams";
-const LEGACY_SERVER_NAMES: &[&str] = &["opencode-memory", "memory-mcp-server", "memory-mcp", "memlong-memory"];
+const LEGACY_SERVER_NAMES: &[&str] = &[
+    "opencode-memory",
+    "memory-mcp-server",
+    "memory-mcp",
+    "memlong-memory",
+];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -441,8 +446,7 @@ mod tests {
 
     #[test]
     fn opencode_config_paths_use_existing_files_or_create_json() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ams-path-test-{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!("ams-path-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         let user_profile = temp_dir.join("user");
         let config_dir = user_profile.join(".config").join("opencode");
@@ -467,8 +471,7 @@ mod tests {
 
     #[test]
     fn update_opencode_config_preserves_existing_mcp_entries_and_removes_legacy_names() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ams-test-{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!("ams-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
         let config_path = temp_dir.join("opencode.jsonc");
@@ -511,8 +514,7 @@ mod tests {
 
     #[test]
     fn update_opencode_config_accepts_jsonc_comments() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ams-jsonc-test-{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!("ams-jsonc-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
         let config_path = temp_dir.join("opencode.jsonc");
@@ -546,8 +548,7 @@ mod tests {
 
     #[test]
     fn update_codex_config_replaces_current_and_legacy_blocks() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ams-codex-test-{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!("ams-codex-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
         let config_path = temp_dir.join("config.toml");
@@ -595,10 +596,8 @@ approval_policy = "never"
 
     #[test]
     fn update_codex_config_creates_parent_directory() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "ams-codex-create-test-{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("ams-codex-create-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         let config_path = temp_dir.join(".codex").join("config.toml");
 

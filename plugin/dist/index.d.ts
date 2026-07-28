@@ -27,20 +27,24 @@ interface SessionContext {
 interface McpClient {
     call(tool: string, params: Record<string, unknown>): Promise<unknown>;
 }
+export declare function shouldRecall(query: string): boolean;
+export declare function shouldCaptureTurn(userMessage: string, assistantMessage: string): boolean;
+export declare function redactSecrets(value: string): string;
+export declare function selectMemories(memories: Memory[]): Memory[];
 declare const _default: {
     name: string;
     version: string;
     hooks: {
         /**
-         * Session Start: retrieve relevant memories and inject into System Prompt
+         * Session Start: selectively retrieve relevant project and global memories.
          */
         onChatStart: (ctx: ChatContext) => Promise<void>;
         /**
-         * Turn Complete: extract and save new memories asynchronously
+         * Turn Complete: selectively capture durable information without blocking the host app.
          */
         onMessageComplete: (ctx: MessageContext) => Promise<void>;
         /**
-         * Session End: trigger batch consolidation (decay and deduplication checks)
+         * Session End: mark the session and consolidate in detached best-effort tasks.
          */
         onSessionEnd: (ctx: SessionContext) => Promise<void>;
     };

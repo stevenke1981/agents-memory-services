@@ -43,23 +43,52 @@ impl RetrievalEngine {
             .weights
             .clone()
             .unwrap_or_else(|| self.default_weights.clone());
-        let fetch_k = query.top_k * 3;
+        let fetch_k = query.top_k.saturating_mul(4);
 
-        // 1. Run embedding and BM25 search in parallel (they have no dependency)
-        let (embed_result, bm25_results) = tokio::join!(
+        // Run both retrieval paths independently. Either side may fail without taking
+        // the other side down, which keeps memory retrieval fail-open for the host app.
+        let (embed_result, bm25_result) = tokio::join!(
             self.llm_client.embed(&query.query, &self.embedding_model),
             async { self.bm25.search_normalized(&query.query, fetch_k) },
         );
 
-        let query_vec = embed_result?;
-        let bm25_results = bm25_results?;
+        let bm25_results = match bm25_result {
+            Ok(results) => results,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "BM25 retrieval degraded; continuing with semantic search"
+                );
+                Vec::new()
+            }
+        };
 
-        let sem_results = self.semantic.search(&query_vec, fetch_k)?;
+        let sem_results = match embed_result {
+            Ok(query_vec) => match self.semantic.search(&query_vec, fetch_k) {
+                Ok(results) => results,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "semantic vector search degraded; continuing with BM25"
+                    );
+                    Vec::new()
+                }
+            },
+            Err(error) => {
+                tracing::warn!(%error, "query embedding degraded; continuing with BM25");
+                Vec::new()
+            }
+        };
 
-        // 2. Fetch all candidates from SQLite
+        if sem_results.is_empty() && bm25_results.is_empty() {
+            tracing::debug!("all retrieval paths returned no candidates");
+            return Ok(Vec::new());
+        }
+
+        // Fetch all candidates from SQLite.
         let mut candidate_ids = std::collections::HashSet::new();
 
-        // Retrieve memory IDs for semantic results by searching SQLite for matching vector_ids
+        // Retrieve memory IDs for semantic results by searching SQLite for matching vector_ids.
         let sem_vector_ids: Vec<i64> = sem_results.iter().map(|(vid, _)| *vid).collect();
         let sem_memories = if !sem_vector_ids.is_empty() {
             self.sqlite
@@ -69,69 +98,79 @@ impl RetrievalEngine {
             Vec::new()
         };
 
-        for m in &sem_memories {
-            candidate_ids.insert(m.id.clone());
+        for memory in &sem_memories {
+            candidate_ids.insert(memory.id.clone());
         }
-        for (mid, _) in &bm25_results {
-            candidate_ids.insert(mid.clone());
+        for (memory_id, _) in &bm25_results {
+            candidate_ids.insert(memory_id.clone());
+        }
+
+        if candidate_ids.is_empty() {
+            return Ok(Vec::new());
         }
 
         let candidate_ids_vec: Vec<String> = candidate_ids.into_iter().collect();
         let all_memories = self.sqlite.get_by_ids(&candidate_ids_vec).await?;
 
-        // 3. Fusion scoring
+        // Fusion scoring.
         let now_ms = chrono::Utc::now().timestamp_millis();
         let mut scored = Vec::new();
 
-        for mem in all_memories {
-            if !self.passes_filters(&mem, query) {
+        for memory in all_memories {
+            if !self.passes_filters(&memory, query) {
                 continue;
             }
 
-            // Semantic score
-            let s_sem = sem_results
+            // Cosine similarity is clamped so a negative vector score cannot reduce
+            // otherwise valid lexical matches.
+            let semantic_score = sem_results
                 .iter()
-                .find(|(vid, _)| *vid == mem.vector_id)
-                .map(|(_, score)| *score as f64)
+                .find(|(vector_id, _)| *vector_id == memory.vector_id)
+                .map(|(_, score)| (*score as f64).clamp(0.0, 1.0))
                 .unwrap_or(0.0);
 
-            // BM25 score
-            let s_bm25 = bm25_results
+            let bm25_score = bm25_results
                 .iter()
-                .find(|(mid, _)| mid == &mem.id)
-                .map(|(_, score)| *score as f64)
+                .find(|(memory_id, _)| memory_id == &memory.id)
+                .map(|(_, score)| (*score as f64).clamp(0.0, 1.0))
                 .unwrap_or(0.0);
 
-            // Temporal score
-            let elapsed_ms = now_ms - mem.last_accessed_at;
+            let elapsed_ms = now_ms.saturating_sub(memory.last_accessed_at);
             let elapsed_days = elapsed_ms as f64 / 86_400_000.0;
-            let s_temp = (-self.temporal_mu * elapsed_days).exp();
+            let temporal_score = (-self.temporal_mu * elapsed_days).exp().clamp(0.0, 1.0);
 
-            // Weighted combination
-            let score_final =
-                weights.semantic * s_sem + weights.bm25 * s_bm25 + weights.temporal * s_temp;
+            let base_score = weights.semantic * semantic_score
+                + weights.bm25 * bm25_score
+                + weights.temporal * temporal_score;
+
+            // Importance is a small quality multiplier, not a substitute for relevance.
+            let importance_multiplier = 0.85 + 0.15 * memory.importance_score.clamp(0.0, 1.0);
+            let final_score = (base_score * importance_multiplier).clamp(0.0, 1.0);
 
             scored.push(SearchResult {
-                memory: mem,
-                score_final,
-                score_semantic: s_sem,
-                score_bm25: s_bm25,
-                score_temporal: s_temp,
+                memory,
+                score_final: final_score,
+                score_semantic: semantic_score,
+                score_bm25: bm25_score,
+                score_temporal: temporal_score,
             });
         }
 
-        // Sort by final score descending
-        scored.sort_by(|a, b| {
-            b.score_final
-                .partial_cmp(&a.score_final)
+        scored.sort_by(|left, right| {
+            right
+                .score_final
+                .partial_cmp(&left.score_final)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         scored.truncate(query.top_k);
 
         tracing::debug!(count = scored.len(), "hybrid search completed");
 
-        // 4. Update access statistics asynchronously for matched memories
-        let hit_ids: Vec<String> = scored.iter().map(|r| r.memory.id.clone()).collect();
+        // Update access statistics asynchronously for matched memories.
+        let hit_ids: Vec<String> = scored
+            .iter()
+            .map(|result| result.memory.id.clone())
+            .collect();
         if !hit_ids.is_empty() {
             let sqlite = self.sqlite.clone();
             tokio::spawn(async move {
@@ -142,55 +181,42 @@ impl RetrievalEngine {
         Ok(scored)
     }
 
-    fn passes_filters(&self, mem: &Memory, query: &SearchQuery) -> bool {
-        // Scope filter
-        if let Some(ref sc) = query.scope {
-            if mem.scope != sc.as_str() {
+    fn passes_filters(&self, memory: &Memory, query: &SearchQuery) -> bool {
+        if let Some(ref scope) = query.scope {
+            if memory.scope != scope.as_str() {
                 return false;
             }
         }
 
-        // Project ID filter
-        if let Some(ref pid) = query.project_id {
-            if mem.project_id.as_ref() != Some(pid) {
+        if let Some(ref project_id) = query.project_id {
+            if memory.project_id.as_ref() != Some(project_id) {
                 return false;
             }
         }
 
-        // Categories filter
-        if let Some(ref cats) = query.categories {
-            if cats.is_empty() {
-                // empty list means no filter
-            } else {
-                let mut found = false;
-                for cat in cats {
-                    if mem.category == cat.as_str() {
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
-                    return false;
-                }
+        if let Some(ref categories) = query.categories {
+            if !categories.is_empty()
+                && !categories
+                    .iter()
+                    .any(|category| memory.category == category.as_str())
+            {
+                return false;
             }
         }
 
-        // Created after filter
         if let Some(created_after) = query.created_after {
-            if mem.created_at < created_after {
+            if memory.created_at < created_after {
                 return false;
             }
         }
 
-        // Min importance score filter
-        if let Some(min_imp) = query.min_importance {
-            if mem.importance_score < min_imp {
+        if let Some(min_importance) = query.min_importance {
+            if memory.importance_score < min_importance {
                 return false;
             }
         }
 
-        // Decayed filter
-        if !query.include_decayed && mem.is_archived() {
+        if !query.include_decayed && memory.is_archived() {
             return false;
         }
 
