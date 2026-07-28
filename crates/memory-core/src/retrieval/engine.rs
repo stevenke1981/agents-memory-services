@@ -43,7 +43,7 @@ impl RetrievalEngine {
             .weights
             .clone()
             .unwrap_or_else(|| self.default_weights.clone());
-        let fetch_k = query.top_k.saturating_mul(4).max(query.top_k);
+        let fetch_k = query.top_k.saturating_mul(4);
 
         // Run both retrieval paths independently. Either side may fail without taking
         // the other side down, which keeps memory retrieval fail-open for the host app.
@@ -55,7 +55,10 @@ impl RetrievalEngine {
         let bm25_results = match bm25_result {
             Ok(results) => results,
             Err(error) => {
-                tracing::warn!(%error, "BM25 retrieval degraded; continuing with semantic search");
+                tracing::warn!(
+                    %error,
+                    "BM25 retrieval degraded; continuing with semantic search"
+                );
                 Vec::new()
             }
         };
@@ -134,7 +137,9 @@ impl RetrievalEngine {
 
             let elapsed_ms = now_ms.saturating_sub(memory.last_accessed_at);
             let elapsed_days = elapsed_ms as f64 / 86_400_000.0;
-            let temporal_score = (-self.temporal_mu * elapsed_days).exp().clamp(0.0, 1.0);
+            let temporal_score = (-self.temporal_mu * elapsed_days)
+                .exp()
+                .clamp(0.0, 1.0);
 
             let base_score = weights.semantic * semantic_score
                 + weights.bm25 * bm25_score
@@ -165,7 +170,10 @@ impl RetrievalEngine {
         tracing::debug!(count = scored.len(), "hybrid search completed");
 
         // Update access statistics asynchronously for matched memories.
-        let hit_ids: Vec<String> = scored.iter().map(|result| result.memory.id.clone()).collect();
+        let hit_ids: Vec<String> = scored
+            .iter()
+            .map(|result| result.memory.id.clone())
+            .collect();
         if !hit_ids.is_empty() {
             let sqlite = self.sqlite.clone();
             tokio::spawn(async move {
