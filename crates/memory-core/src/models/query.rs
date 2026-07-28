@@ -2,6 +2,9 @@ use crate::models::memory::{Memory, MemoryCategory, MemoryScope};
 use crate::{error::Result, MemoryError};
 use serde::{Deserialize, Serialize};
 
+const MAX_QUERY_CHARACTERS: usize = 16_384;
+const MAX_TOP_K: usize = 100;
+
 /// 混合檢索查詢參數
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
@@ -105,10 +108,29 @@ impl Default for SearchQuery {
 
 impl SearchQuery {
     pub fn validate(&self) -> Result<()> {
-        if self.top_k == 0 {
+        let query_length = self.query.trim().chars().count();
+        if query_length == 0 {
             return Err(MemoryError::Config(
-                "Search top_k must be greater than zero".to_string(),
+                "Search query must not be empty".to_string(),
             ));
+        }
+        if query_length > MAX_QUERY_CHARACTERS {
+            return Err(MemoryError::Config(format!(
+                "Search query must be at most {MAX_QUERY_CHARACTERS} characters"
+            )));
+        }
+        if self.top_k == 0 || self.top_k > MAX_TOP_K {
+            return Err(MemoryError::Config(format!(
+                "Search top_k must be between 1 and {MAX_TOP_K}"
+            )));
+        }
+
+        if let Some(min_importance) = self.min_importance {
+            if !min_importance.is_finite() || !(0.0..=1.0).contains(&min_importance) {
+                return Err(MemoryError::Config(
+                    "Search min_importance must be finite and between 0.0 and 1.0".to_string(),
+                ));
+            }
         }
 
         if let Some(weights) = &self.weights {
@@ -130,5 +152,47 @@ impl SearchQuery {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_blank_and_oversized_queries() {
+        let blank = SearchQuery {
+            query: "   ".to_string(),
+            ..Default::default()
+        };
+        assert!(blank.validate().is_err());
+
+        let oversized = SearchQuery {
+            query: "x".repeat(MAX_QUERY_CHARACTERS + 1),
+            ..Default::default()
+        };
+        assert!(oversized.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_unbounded_result_requests() {
+        let query = SearchQuery {
+            query: "memory".to_string(),
+            top_k: MAX_TOP_K + 1,
+            ..Default::default()
+        };
+        assert!(query.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_importance_thresholds() {
+        for value in [-0.1, 1.1, f64::NAN] {
+            let query = SearchQuery {
+                query: "memory".to_string(),
+                min_importance: Some(value),
+                ..Default::default()
+            };
+            assert!(query.validate().is_err());
+        }
     }
 }

@@ -2,6 +2,15 @@ use crate::error::Result;
 use std::env;
 use std::path::PathBuf;
 
+fn is_placeholder(value: &str) -> bool {
+    let value = value.trim();
+    value.is_empty()
+        || value.contains("${")
+        || value.contains("$(")
+        || value.starts_with('$')
+        || (value.len() > 2 && value.starts_with('%') && value.ends_with('%'))
+}
+
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {
     pub db_path: String,
@@ -26,11 +35,15 @@ pub struct MemoryConfig {
 
 impl MemoryConfig {
     pub fn from_env() -> Result<Self> {
-        // Resolve .opencode directory locally or in absolute path
-        let base_dir = env::var("PROJECT_ROOT")
+        // Reject empty or unexpanded template values so a copied client config cannot
+        // create a literal `${PROJECT_ROOT}/.opencode` directory inside the host app.
+        let project_root = env::var("PROJECT_ROOT")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !is_placeholder(value))
             .map(PathBuf::from)
-            .unwrap_or_else(|_| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-            .join(".opencode");
+            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let base_dir = project_root.join(".opencode");
 
         let db_path = env::var("MEMORY_DB_PATH")
             .unwrap_or_else(|_| base_dir.join("memory.db").to_string_lossy().into_owned());
@@ -128,5 +141,35 @@ impl MemoryConfig {
             min_confidence,
             min_importance,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_unexpanded_project_root_placeholders() {
+        for value in [
+            "",
+            "   ",
+            "${PROJECT_ROOT}",
+            "$PROJECT_ROOT",
+            "$(pwd)",
+            "%PROJECT_ROOT%",
+        ] {
+            assert!(is_placeholder(value), "expected placeholder: {value:?}");
+        }
+    }
+
+    #[test]
+    fn accepts_normal_project_paths() {
+        for value in [
+            "/absolute/project",
+            "relative/project",
+            r"C:\Users\owner\project",
+        ] {
+            assert!(!is_placeholder(value), "expected normal path: {value:?}");
+        }
     }
 }

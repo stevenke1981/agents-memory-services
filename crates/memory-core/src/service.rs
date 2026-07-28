@@ -20,7 +20,6 @@ pub struct MemoryService {
 
 impl MemoryService {
     pub async fn new(config: MemoryConfig) -> Result<Self> {
-        // Ensure parent directories exist for database and indexes
         if let Some(parent) = std::path::Path::new(&config.db_path).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -32,15 +31,13 @@ impl MemoryService {
         }
 
         let sqlite = Arc::new(SqliteStore::new(&config.db_path).await?);
-
         let vector_store = Arc::new(VectorStore::new(&config.vector_path, config.embedding_dim)?);
-
         let text_index = Arc::new(TextIndex::new(&config.tantivy_path)?);
-
-        let llm_client = Arc::new(LlmClient::new(
+        let llm_client = Arc::new(LlmClient::new_with_embedding_dim(
             &config.llm_api_base,
             &config.embedding_api_base,
             &config.llm_api_key,
+            config.embedding_dim,
         ));
 
         let extraction_config = ExtractionConfig {
@@ -82,7 +79,6 @@ impl MemoryService {
             config.temporal_mu,
         ));
 
-        // Persist actual embedding metadata into system_config
         let _ = sqlite
             .set_system_config("vector_dimensions", &config.embedding_dim.to_string())
             .await;
@@ -118,7 +114,6 @@ impl MemoryService {
         session_id: String,
         metadata: Option<serde_json::Value>,
     ) -> Result<Vec<Memory>> {
-        // 1. Extract memory chunks from content (gracefully degraded)
         let extracted_chunks = match self.extraction.extract(content).await {
             Ok(chunks) => chunks,
             Err(e @ MemoryError::ExtractionFailed(_))
@@ -130,7 +125,6 @@ impl MemoryService {
             Err(e) => return Err(e),
         };
 
-        // 2. Enforce max_records limit
         let current_count = self.sqlite.memory_count().await?;
         if current_count >= self.config.max_records as i64 {
             tracing::warn!(
@@ -141,7 +135,6 @@ impl MemoryService {
             return Ok(Vec::new());
         }
 
-        // 3. Ensure session_stats row exists
         let _ = self
             .sqlite
             .ensure_session(&session_id, project_id.as_deref())
@@ -152,7 +145,6 @@ impl MemoryService {
         let mut dedup_count = 0i64;
         let mut added = Vec::new();
         for chunk in extracted_chunks {
-            // 2. Embed content (skip on failure)
             let vector = match self.extraction.embed(&chunk.content).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -161,7 +153,6 @@ impl MemoryService {
                 }
             };
 
-            // 3. Consolidate and insert
             match self
                 .consolidation
                 .consolidate_single(
@@ -188,12 +179,10 @@ impl MemoryService {
             }
         }
 
-        // Flush text index batch
         if let Err(e) = self.text_index.flush() {
             tracing::warn!("Failed to flush text index: {e}");
         }
 
-        // Update session stats
         let _ = self
             .sqlite
             .update_session_stats(&session_id, extracted_count, added_count, dedup_count, 0, 0)
@@ -202,10 +191,8 @@ impl MemoryService {
         Ok(added)
     }
 
-    /// Search memories using Hybrid retrieval
     pub async fn search_memories(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         let results = self.retrieval.search(query).await?;
-        // Track retrieval in session_stats if session_id is set
         if let Some(session_id) = query.session_id.as_deref() {
             let _ = self
                 .sqlite
@@ -215,7 +202,6 @@ impl MemoryService {
         Ok(results)
     }
 
-    /// Retrieve memories with filters
     pub async fn get_memories(
         &self,
         ids: Option<Vec<String>>,
@@ -233,7 +219,6 @@ impl MemoryService {
         }
     }
 
-    /// Delete memory by ID
     pub async fn delete_memory(&self, id: &str) -> Result<bool> {
         let Some(memory) = self.sqlite.get_memory(id).await? else {
             return Ok(false);
@@ -247,7 +232,6 @@ impl MemoryService {
         Ok(deleted)
     }
 
-    /// Consolidate memories (decay calculations)
     #[tracing::instrument(skip(self))]
     pub async fn consolidate_memories(
         &self,
@@ -259,17 +243,14 @@ impl MemoryService {
             .await
     }
 
-    /// Expose the consolidation engine for background scheduling
     pub fn consolidation_engine(&self) -> Arc<ConsolidationEngine> {
         self.consolidation.clone()
     }
 
-    /// End a session by ID (sets ended_at timestamp)
     pub async fn end_session(&self, session_id: &str) -> Result<()> {
         self.sqlite.end_session(session_id).await
     }
 
-    /// Get stats
     pub async fn get_stats(&self) -> Result<serde_json::Value> {
         let mut stats = self.sqlite.get_stats().await?;
         if let Some(object) = stats.as_object_mut() {
