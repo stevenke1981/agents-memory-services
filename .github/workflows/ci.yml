@@ -38,17 +38,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Format retrieval source for diagnostics
-        if: failure()
-        run: cargo fmt --all
-
-      - name: Upload formatted retrieval source
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rustfmt-engine-${{ matrix.os }}
-          path: crates/memory-core/src/retrieval/engine.rs
-
       - name: Run tests
         run: cargo test --workspace
 
