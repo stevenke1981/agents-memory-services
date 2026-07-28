@@ -54,7 +54,7 @@ pub struct SearchWeightsInput {
 pub struct SearchMemoriesInput {
     #[schemars(description = "Natural language search query")]
     pub query: String,
-    #[schemars(description = "Number of memories to return")]
+    #[schemars(description = "Number of memories to return (1-100)")]
     pub top_k: Option<usize>,
     #[schemars(description = "Filter by scope")]
     pub scope: Option<String>,
@@ -64,8 +64,16 @@ pub struct SearchMemoriesInput {
     pub session_id: Option<String>,
     #[schemars(description = "Filter by categories")]
     pub categories: Option<Vec<String>>,
-    #[schemars(description = "Minimum importance score threshold")]
+    #[schemars(description = "Minimum importance score threshold (0.0-1.0)")]
     pub min_importance: Option<f64>,
+    #[schemars(description = "Minimum final relevance score threshold (0.0-1.0)")]
+    pub min_score: Option<f64>,
+    #[schemars(description = "Include archived/decayed memories")]
+    pub include_decayed: Option<bool>,
+    #[schemars(description = "Only return memories created at or after this Unix timestamp (ms)")]
+    pub created_after: Option<i64>,
+    #[schemars(description = "Return a compact response optimized for prompt injection")]
+    pub compact: Option<bool>,
     #[schemars(description = "Weights for semantic, BM25, and temporal scores")]
     pub weights: Option<SearchWeightsInput>,
 }
@@ -129,7 +137,6 @@ impl MemoryMcpServer {
         let scope = MemoryScope::from_str(scope_raw)
             .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))?;
 
-        // Validate scope requirements
         match &scope {
             MemoryScope::Project => {
                 if input.project_id.is_none() {
@@ -149,7 +156,6 @@ impl MemoryMcpServer {
         }
 
         let session_id = input.session_id.unwrap_or_else(|| "default".to_string());
-
         let memories = self
             .service
             .add_memory(
@@ -166,13 +172,12 @@ impl MemoryMcpServer {
         let text = serde_json::to_string_pretty(&memories).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
-
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
     #[tool(
         name = "search_memories",
-        description = "Hybrid semantic+BM25+temporal retrieval of relevant memories. Returns ranked results with score breakdown."
+        description = "Hybrid semantic+BM25+temporal retrieval with optional relevance filtering and compact responses."
     )]
     async fn search_memories(
         &self,
@@ -181,28 +186,42 @@ impl MemoryMcpServer {
         let scope = input
             .scope
             .as_deref()
-            .map(|s| {
-                MemoryScope::from_str(s)
+            .map(|value| {
+                MemoryScope::from_str(value)
                     .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))
             })
             .transpose()?;
 
-        let categories = input.categories.map(|arr| {
-            arr.iter()
-                .filter_map(|val| val.parse::<memory_core::models::MemoryCategory>().ok())
-                .collect::<Vec<_>>()
+        let categories = input
+            .categories
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| {
+                        value
+                            .parse::<memory_core::models::MemoryCategory>()
+                            .map_err(|e| {
+                                McpError::invalid_params(format!("Invalid category: {e}"), None)
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+
+        let weights = input.weights.map(|weights| HybridWeights {
+            semantic: weights.semantic.unwrap_or(0.6),
+            bm25: weights.bm25.unwrap_or(0.3),
+            temporal: weights.temporal.unwrap_or(0.1),
         });
 
-        let weights = input.weights.map(|w| {
-            let semantic = w.semantic.unwrap_or(0.6);
-            let bm25 = w.bm25.unwrap_or(0.3);
-            let temporal = w.temporal.unwrap_or(0.1);
-            HybridWeights {
-                semantic,
-                bm25,
-                temporal,
+        if let Some(min_score) = input.min_score {
+            if !min_score.is_finite() || !(0.0..=1.0).contains(&min_score) {
+                return Err(McpError::invalid_params(
+                    "min_score must be finite and between 0.0 and 1.0",
+                    None,
+                ));
             }
-        });
+        }
 
         let query = SearchQuery {
             query: input.query,
@@ -211,9 +230,9 @@ impl MemoryMcpServer {
             project_id: input.project_id,
             session_id: input.session_id,
             categories,
-            created_after: None,
+            created_after: input.created_after,
             min_importance: input.min_importance,
-            include_decayed: false,
+            include_decayed: input.include_decayed.unwrap_or(false),
             weights,
         };
 
@@ -221,11 +240,36 @@ impl MemoryMcpServer {
             .validate()
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
 
-        let results = self.service.search_memories(&query).await.map_err(|e| {
+        let mut results = self.service.search_memories(&query).await.map_err(|e| {
             McpError::internal_error(format!("Failed to search memories: {}", e), None)
         })?;
+        if let Some(min_score) = input.min_score {
+            results.retain(|result| result.score_final >= min_score);
+        }
 
-        let text = serde_json::to_string_pretty(&results).map_err(|e| {
+        let text = if input.compact.unwrap_or(false) {
+            let compact_results: Vec<Value> = results
+                .iter()
+                .map(|result| {
+                    serde_json::json!({
+                        "id": &result.memory.id,
+                        "content": &result.memory.content,
+                        "category": &result.memory.category,
+                        "scope": &result.memory.scope,
+                        "project_id": &result.memory.project_id,
+                        "importance_score": result.memory.importance_score,
+                        "score_final": result.score_final,
+                        "score_semantic": result.score_semantic,
+                        "score_bm25": result.score_bm25,
+                        "score_temporal": result.score_temporal,
+                    })
+                })
+                .collect();
+            serde_json::to_string(&compact_results)
+        } else {
+            serde_json::to_string_pretty(&results)
+        }
+        .map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
 
@@ -248,9 +292,7 @@ impl MemoryMcpServer {
                     .map_err(|e| McpError::invalid_params(format!("Invalid scope: {e}"), None))
             })
             .transpose()?;
-
         let limit = input.limit.unwrap_or(20);
-
         let memories = self
             .service
             .get_memories(input.ids, scope, input.project_id, limit)
@@ -258,11 +300,9 @@ impl MemoryMcpServer {
             .map_err(|e| {
                 McpError::internal_error(format!("Failed to retrieve memories: {}", e), None)
             })?;
-
         let text = serde_json::to_string_pretty(&memories).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
-
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
@@ -277,11 +317,9 @@ impl MemoryMcpServer {
         let deleted = self.service.delete_memory(&input.id).await.map_err(|e| {
             McpError::internal_error(format!("Failed to delete memory: {}", e), None)
         })?;
-
         let text = serde_json::to_string_pretty(&deleted).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
-
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
@@ -307,12 +345,10 @@ impl MemoryMcpServer {
             .map_err(|e| {
                 McpError::internal_error(format!("Failed to consolidate memories: {}", e), None)
             })?;
-
         let result = serde_json::json!({ "status": "success" });
         let text = serde_json::to_string_pretty(&result).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
-
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
@@ -324,15 +360,12 @@ impl MemoryMcpServer {
         &self,
         #[tool(aggr)] _input: EmptyInput,
     ) -> Result<CallToolResult, McpError> {
-        let stats =
-            self.service.get_stats().await.map_err(|e| {
-                McpError::internal_error(format!("Failed to get stats: {}", e), None)
-            })?;
-
+        let stats = self.service.get_stats().await.map_err(|e| {
+            McpError::internal_error(format!("Failed to get stats: {}", e), None)
+        })?;
         let text = serde_json::to_string_pretty(&stats).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
-
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
@@ -348,19 +381,13 @@ impl MemoryMcpServer {
             .end_session(&input.session_id)
             .await
             .map_err(|e| McpError::internal_error(format!("Failed to end session: {}", e), None))?;
-
         let result = serde_json::json!({ "status": "success" });
         let text = serde_json::to_string_pretty(&result).map_err(|e| {
             McpError::internal_error(format!("Failed to serialize result: {}", e), None)
         })?;
-
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ServerHandler implementation with Schema Normalization
-// ─────────────────────────────────────────────────────────────────────────────
 
 impl ServerHandler for MemoryMcpServer {
     fn get_info(&self) -> ServerInfo {
@@ -407,7 +434,6 @@ impl ServerHandler for MemoryMcpServer {
     }
 }
 
-// Recursive helper to clean boolean schemas into empty objects
 fn normalize_schema(value: &mut Value) {
     match value {
         Value::Object(map) => {
