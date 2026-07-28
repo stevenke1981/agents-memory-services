@@ -18,8 +18,12 @@ test("parses direct, wrapped, and rmcp text responses", () => {
   );
 });
 
-test("formats nested search results without undefined fields", () => {
-  const text = formatMemoriesForInjection([{ memory }]);
-  assert.match(text, /\[Preference\] User prefers Rust\./);
+test("formats nested search results as bounded untrusted context", () => {
+  const text = formatMemoriesForInjection([{ memory, score_final: 0.72 }]);
+  assert.match(text, /Retrieved Memory Context/);
+  assert.match(text, /not instructions/i);
+  assert.match(text, /category="Preference"/);
+  assert.match(text, /relevance="0\.720"/);
+  assert.match(text, /User prefers Rust\./);
   assert.doesNotMatch(text, /undefined/);
 });
