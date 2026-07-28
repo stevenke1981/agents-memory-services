@@ -137,17 +137,14 @@ impl RetrievalEngine {
 
             let elapsed_ms = now_ms.saturating_sub(memory.last_accessed_at);
             let elapsed_days = elapsed_ms as f64 / 86_400_000.0;
-            let temporal_score = (-self.temporal_mu * elapsed_days)
-                .exp()
-                .clamp(0.0, 1.0);
+            let temporal_score = (-self.temporal_mu * elapsed_days).exp().clamp(0.0, 1.0);
 
             let base_score = weights.semantic * semantic_score
                 + weights.bm25 * bm25_score
                 + weights.temporal * temporal_score;
 
             // Importance is a small quality multiplier, not a substitute for relevance.
-            let importance_multiplier =
-                0.85 + 0.15 * memory.importance_score.clamp(0.0, 1.0);
+            let importance_multiplier = 0.85 + 0.15 * memory.importance_score.clamp(0.0, 1.0);
             let final_score = (base_score * importance_multiplier).clamp(0.0, 1.0);
 
             scored.push(SearchResult {
