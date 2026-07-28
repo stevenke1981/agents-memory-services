@@ -11,23 +11,8 @@ jobs:
   inventory:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: List remote branches and divergence from master
+      - name: List remote branch heads
         shell: bash
         run: |
           set -euo pipefail
-          git remote set-branches origin '*'
-          git fetch origin --prune '+refs/heads/*:refs/remotes/origin/*'
-          printf '%-55s %-8s %-8s %s\n' BRANCH AHEAD BEHIND HEAD
-          while IFS= read -r ref; do
-            branch="${ref#origin/}"
-            [ "$branch" = "HEAD" ] && continue
-            counts="$(git rev-list --left-right --count origin/master..."$ref")"
-            behind="${counts%%[[:space:]]*}"
-            ahead="${counts##*[[:space:]]}"
-            head="$(git rev-parse --short "$ref")"
-            printf '%-55s %-8s %-8s %s\n' "$branch" "$ahead" "$behind" "$head"
-          done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin | sort)
+          git ls-remote --heads https://github.com/${{ github.repository }}.git | sort -k2
