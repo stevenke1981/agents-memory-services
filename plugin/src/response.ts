@@ -86,11 +86,13 @@ function normalizeMemories(values: unknown[]): Memory[] {
     };
 
     // SearchResult stores score_final beside `memory`, not inside it.
+    const wrapperScore = wrapper?.score_final;
+    const candidateScore = candidate.score_final;
     const scoreFinal =
-      typeof wrapper?.score_final === "number"
-        ? wrapper.score_final
-        : typeof candidate.score_final === "number"
-          ? candidate.score_final
+      typeof wrapperScore === "number"
+        ? wrapperScore
+        : typeof candidateScore === "number"
+          ? candidateScore
           : undefined;
     if (scoreFinal !== undefined && Number.isFinite(scoreFinal)) {
       memory.score_final = scoreFinal;
