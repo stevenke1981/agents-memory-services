@@ -3,6 +3,7 @@ use crate::extraction::LlmClient;
 use crate::models::{HybridWeights, Memory, SearchQuery, SearchResult};
 use crate::retrieval::{bm25::Bm25Retriever, semantic::SemanticRetriever};
 use crate::storage::SqliteStore;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub struct RetrievalEngine {
@@ -39,7 +40,7 @@ impl RetrievalEngine {
     #[tracing::instrument(skip(self), fields(query = %query.query, top_k = query.top_k))]
     pub async fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
         query.validate()?;
-        let weights = query
+        let configured_weights = query
             .weights
             .clone()
             .unwrap_or_else(|| self.default_weights.clone());
@@ -63,7 +64,7 @@ impl RetrievalEngine {
             }
         };
 
-        let sem_results = match embed_result {
+        let semantic_results = match embed_result {
             Ok(query_vec) => match self.semantic.search(&query_vec, fetch_k) {
                 Ok(results) => results,
                 Err(error) => {
@@ -80,68 +81,77 @@ impl RetrievalEngine {
             }
         };
 
-        if sem_results.is_empty() && bm25_results.is_empty() {
+        if semantic_results.is_empty() && bm25_results.is_empty() {
             tracing::debug!("all retrieval paths returned no candidates");
             return Ok(Vec::new());
         }
 
-        // Fetch all candidates from SQLite.
-        let mut candidate_ids = std::collections::HashSet::new();
+        // Re-normalize weights over the retrieval paths that are actually available.
+        // Without this, a BM25-only fallback with a configured BM25 weight of 0.30 can
+        // never reach normal relevance thresholds even when it is an exact match.
+        let active_weights = normalize_active_weights(
+            &configured_weights,
+            !semantic_results.is_empty(),
+            !bm25_results.is_empty(),
+        );
 
-        // Retrieve memory IDs for semantic results by searching SQLite for matching vector_ids.
-        let sem_vector_ids: Vec<i64> = sem_results.iter().map(|(vid, _)| *vid).collect();
-        let sem_memories = if !sem_vector_ids.is_empty() {
-            self.sqlite
-                .get_memories_by_vector_ids(&sem_vector_ids)
-                .await?
-        } else {
+        let semantic_scores: HashMap<i64, f64> = semantic_results
+            .iter()
+            .map(|(vector_id, score)| (*vector_id, (*score as f64).clamp(0.0, 1.0)))
+            .collect();
+        let bm25_scores: HashMap<String, f64> = bm25_results
+            .iter()
+            .map(|(memory_id, score)| (memory_id.clone(), (*score as f64).clamp(0.0, 1.0)))
+            .collect();
+
+        // Fetch all candidates from SQLite.
+        let mut candidate_ids = HashSet::new();
+        let semantic_vector_ids: Vec<i64> = semantic_results
+            .iter()
+            .map(|(vector_id, _)| *vector_id)
+            .collect();
+        let semantic_memories = if semantic_vector_ids.is_empty() {
             Vec::new()
+        } else {
+            self.sqlite
+                .get_memories_by_vector_ids(&semantic_vector_ids)
+                .await?
         };
 
-        for memory in &sem_memories {
+        for memory in &semantic_memories {
             candidate_ids.insert(memory.id.clone());
         }
-        for (memory_id, _) in &bm25_results {
-            candidate_ids.insert(memory_id.clone());
-        }
+        candidate_ids.extend(bm25_scores.keys().cloned());
 
         if candidate_ids.is_empty() {
             return Ok(Vec::new());
         }
 
-        let candidate_ids_vec: Vec<String> = candidate_ids.into_iter().collect();
-        let all_memories = self.sqlite.get_by_ids(&candidate_ids_vec).await?;
+        let candidate_ids: Vec<String> = candidate_ids.into_iter().collect();
+        let all_memories = self.sqlite.get_by_ids(&candidate_ids).await?;
 
         // Fusion scoring.
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let mut scored = Vec::new();
+        let mut scored = Vec::with_capacity(all_memories.len());
 
         for memory in all_memories {
             if !self.passes_filters(&memory, query) {
                 continue;
             }
 
-            // Cosine similarity is clamped so a negative vector score cannot reduce
-            // otherwise valid lexical matches.
-            let semantic_score = sem_results
-                .iter()
-                .find(|(vector_id, _)| *vector_id == memory.vector_id)
-                .map(|(_, score)| (*score as f64).clamp(0.0, 1.0))
+            let semantic_score = semantic_scores
+                .get(&memory.vector_id)
+                .copied()
                 .unwrap_or(0.0);
-
-            let bm25_score = bm25_results
-                .iter()
-                .find(|(memory_id, _)| memory_id == &memory.id)
-                .map(|(_, score)| (*score as f64).clamp(0.0, 1.0))
-                .unwrap_or(0.0);
+            let bm25_score = bm25_scores.get(&memory.id).copied().unwrap_or(0.0);
 
             let elapsed_ms = now_ms.saturating_sub(memory.last_accessed_at);
             let elapsed_days = elapsed_ms as f64 / 86_400_000.0;
             let temporal_score = (-self.temporal_mu * elapsed_days).exp().clamp(0.0, 1.0);
 
-            let base_score = weights.semantic * semantic_score
-                + weights.bm25 * bm25_score
-                + weights.temporal * temporal_score;
+            let base_score = active_weights.semantic * semantic_score
+                + active_weights.bm25 * bm25_score
+                + active_weights.temporal * temporal_score;
 
             // Importance is a small quality multiplier, not a substitute for relevance.
             let importance_multiplier = 0.85 + 0.15 * memory.importance_score.clamp(0.0, 1.0);
@@ -221,5 +231,107 @@ impl RetrievalEngine {
         }
 
         true
+    }
+}
+
+fn normalize_active_weights(
+    configured: &HybridWeights,
+    semantic_available: bool,
+    bm25_available: bool,
+) -> HybridWeights {
+    let semantic = if semantic_available {
+        configured.semantic
+    } else {
+        0.0
+    };
+    let bm25 = if bm25_available {
+        configured.bm25
+    } else {
+        0.0
+    };
+    let temporal = configured.temporal;
+    let total = semantic + bm25 + temporal;
+
+    if total > f64::EPSILON {
+        return HybridWeights {
+            semantic: semantic / total,
+            bm25: bm25 / total,
+            temporal: temporal / total,
+        };
+    }
+
+    match (semantic_available, bm25_available) {
+        (true, true) => HybridWeights {
+            semantic: 0.5,
+            bm25: 0.5,
+            temporal: 0.0,
+        },
+        (true, false) => HybridWeights {
+            semantic: 1.0,
+            bm25: 0.0,
+            temporal: 0.0,
+        },
+        (false, true) => HybridWeights {
+            semantic: 0.0,
+            bm25: 1.0,
+            temporal: 0.0,
+        },
+        (false, false) => HybridWeights::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renormalizes_bm25_only_fallback() {
+        let weights = normalize_active_weights(
+            &HybridWeights {
+                semantic: 0.68,
+                bm25: 0.30,
+                temporal: 0.02,
+            },
+            false,
+            true,
+        );
+
+        assert!((weights.bm25 - 0.9375).abs() < 1e-9);
+        assert!((weights.temporal - 0.0625).abs() < 1e-9);
+        assert_eq!(weights.semantic, 0.0);
+    }
+
+    #[test]
+    fn renormalizes_semantic_only_fallback() {
+        let weights = normalize_active_weights(
+            &HybridWeights {
+                semantic: 0.68,
+                bm25: 0.30,
+                temporal: 0.02,
+            },
+            true,
+            false,
+        );
+
+        assert!((weights.semantic - (0.68 / 0.70)).abs() < 1e-9);
+        assert!((weights.temporal - (0.02 / 0.70)).abs() < 1e-9);
+        assert_eq!(weights.bm25, 0.0);
+    }
+
+    #[test]
+    fn falls_back_to_available_path_when_configured_weight_is_zero() {
+        let weights = normalize_active_weights(
+            &HybridWeights {
+                semantic: 1.0,
+                bm25: 0.0,
+                temporal: 0.0,
+            },
+            false,
+            true,
+        );
+
+        assert_eq!(weights.semantic, 0.0);
+        assert_eq!(weights.bm25, 1.0);
+        assert_eq!(weights.temporal, 0.0);
     }
 }
