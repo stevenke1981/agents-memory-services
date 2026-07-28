@@ -38,6 +38,20 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Capture workspace rustfmt patch
+        if: failure() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo fmt --all
+          git diff -- . > rustfmt.patch
+
+      - name: Upload workspace rustfmt patch
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-workspace-patch
+          path: rustfmt.patch
+
       - name: Run tests
         run: cargo test --workspace
 
