@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - main
+      - agent/memory-v2-integration
   pull_request:
   workflow_dispatch:
 
@@ -13,6 +14,34 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  format-integration:
+    if: github.event_name == 'push' && github.ref_name == 'agent/memory-v2-integration'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/memory-v2-integration
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply rustfmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '*.rs'
+          git commit -m "style: apply cargo fmt"
+          git push origin HEAD:agent/memory-v2-integration
+
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
