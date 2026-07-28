@@ -1,7 +1,7 @@
 {
   "name": "ams-plugin",
-  "version": "1.0.0",
-  "description": "TypeScript shim for the OpenCode Agent Long-Term Memory System",
+  "version": "1.2.0",
+  "description": "Selective, queued, non-blocking lifecycle adapter for Agents Memory Service",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
