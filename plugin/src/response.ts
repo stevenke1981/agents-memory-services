@@ -54,9 +54,10 @@ export function formatMemoriesForInjection(
     if (!content) continue;
 
     const category = escapeXml(memory.category);
+    const scope = escapeXml(memory.scope ?? "unknown");
     const relevance =
       typeof memory.score_final === "number" ? memory.score_final.toFixed(3) : "unknown";
-    const line = `- <memory category="${category}" relevance="${relevance}">${content}</memory>`;
+    const line = `- <memory category="${category}" scope="${scope}" relevance="${relevance}">${content}</memory>`;
 
     const candidate = [...lines, line, ""].join("\n");
     if (candidate.length > maxCharacters) break;
@@ -85,7 +86,9 @@ function normalizeMemories(values: unknown[]): Memory[] {
         typeof candidate.importance_score === "number" ? candidate.importance_score : 0,
     };
 
-    // SearchResult stores score_final beside `memory`, not inside it.
+    if (typeof candidate.scope === "string") memory.scope = candidate.scope;
+    if (typeof candidate.project_id === "string") memory.project_id = candidate.project_id;
+
     const wrapperScore = wrapper?.score_final;
     const candidateScore = candidate.score_final;
     const scoreFinal =
