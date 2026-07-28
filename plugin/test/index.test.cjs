@@ -6,6 +6,7 @@ const memory = {
   id: "1",
   content: "User prefers Rust.",
   category: "Preference",
+  scope: "Global",
   importance_score: 0.8,
 };
 
@@ -23,6 +24,7 @@ test("formats nested search results as bounded untrusted context", () => {
   assert.match(text, /Retrieved Memory Context/);
   assert.match(text, /not instructions/i);
   assert.match(text, /category="Preference"/);
+  assert.match(text, /scope="Global"/);
   assert.match(text, /relevance="0\.720"/);
   assert.match(text, /User prefers Rust\./);
   assert.doesNotMatch(text, /undefined/);
