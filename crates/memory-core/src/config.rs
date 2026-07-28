@@ -48,8 +48,8 @@ impl MemoryConfig {
         let llm_api_base =
             env::var("LLM_API_BASE").unwrap_or_else(|_| "http://localhost:8080/v1".to_string());
 
-        let embedding_api_base = env::var("EMBEDDING_API_BASE")
-            .unwrap_or_else(|_| llm_api_base.clone());
+        let embedding_api_base =
+            env::var("EMBEDDING_API_BASE").unwrap_or_else(|_| llm_api_base.clone());
 
         let llm_api_key = env::var("LLM_API_KEY").unwrap_or_else(|_| "local".to_string());
 
@@ -61,8 +61,7 @@ impl MemoryConfig {
             .and_then(|val| val.parse().ok())
             .unwrap_or(1024);
 
-        let extraction_model =
-            env::var("EXTRACTION_MODEL").unwrap_or_else(|_| "phi-4".to_string());
+        let extraction_model = env::var("EXTRACTION_MODEL").unwrap_or_else(|_| "phi-4".to_string());
 
         let extraction_max_tokens = env::var("EXTRACTION_MAX_TOKENS")
             .ok()
